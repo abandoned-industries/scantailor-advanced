@@ -68,6 +68,7 @@
 #include "OutputProcessingParams.h"
 #include "Params.h"
 #include "PictureLayerProperty.h"
+#include "PictureRegionMask.h"
 #include "PictureShapeOptions.h"
 #include "RenderParams.h"
 #include "Settings.h"
@@ -224,6 +225,8 @@ class OutputGenerator::Processor {
   ColorParams m_colorParams;
   SplittingOptions m_splittingOptions;
   PictureShapeOptions m_pictureShapeOptions;
+  ContinuousToneRegions m_continuousToneRegions;
+  PictureFrames m_pictureFrames;
   DewarpingOptions m_dewarpingOptions;
   double m_despeckleLevel;
   OutputProcessingParams m_outputProcessingParams;
@@ -312,6 +315,8 @@ void OutputGenerator::Processor::initParams() {
   m_colorParams = params.colorParams();
   m_splittingOptions = params.splittingOptions();
   m_pictureShapeOptions = params.pictureShapeOptions();
+  m_continuousToneRegions = params.continuousToneRegions();
+  m_pictureFrames = params.pictureFrames();
   m_dewarpingOptions = params.dewarpingOptions();
   m_despeckleLevel = params.despeckleLevel();
 
@@ -1489,6 +1494,10 @@ std::unique_ptr<OutputImage> OutputGenerator::Processor::processWithoutDewarping
   if (m_renderParams.mixedOutput()) {
     BinaryImage bwMask(m_workingBoundingRect.size(), BLACK);
     processPictureZones(bwMask, pictureZones, GrayImage(maybeNormalized));
+    fillPictureRegionHoles(bwMask, m_continuousToneRegions, m_xform.transform(),
+                           m_workingBoundingRect.topLeft());
+    fillPictureFrames(bwMask, m_pictureFrames, m_xform.transform(),
+                      m_workingBoundingRect.topLeft());
     if (m_dbg) {
       m_dbg->add(bwMask, "bwMask");
     }
@@ -1690,6 +1699,10 @@ std::unique_ptr<OutputImage> OutputGenerator::Processor::processWithDewarping(Zo
   if (m_renderParams.mixedOutput()) {
     warpedBwMask = BinaryImage(m_workingBoundingRect.size(), BLACK);
     processPictureZones(warpedBwMask, pictureZones, warpedGrayOutput);
+    fillPictureRegionHoles(warpedBwMask, m_continuousToneRegions, m_xform.transform(),
+                           m_workingBoundingRect.topLeft());
+    fillPictureFrames(warpedBwMask, m_pictureFrames, m_xform.transform(),
+                      m_workingBoundingRect.topLeft());
     if (m_dbg) {
       m_dbg->add(warpedBwMask, "warpedBwMask");
     }

@@ -62,6 +62,8 @@ set(common_sources
     ImageLoader.cpp ImageLoader.h
     ImageTypeDetector.cpp ImageTypeDetector.h
     LeptonicaDetector.cpp LeptonicaDetector.h
+    PhotoFrameDetector.cpp PhotoFrameDetector.h
+    PlatePrior.cpp PlatePrior.h
     WhiteBalance.cpp WhiteBalance.h
     weasel/PhotoAdjustments.cpp weasel/PhotoAdjustments.h
     weasel/WebOptionsPanelBase.cpp weasel/WebOptionsPanelBase.h

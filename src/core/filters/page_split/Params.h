@@ -19,7 +19,10 @@ class Params {
  public:
   // Member-wise copying is OK.
 
-  Params(const PageLayout& layout, const Dependencies& deps, AutoManualMode splitLineMode);
+  Params(const PageLayout& layout,
+         const Dependencies& deps,
+         AutoManualMode splitLineMode,
+         const QString& decisionReason = QString());
 
   explicit Params(const QDomElement& el);
 
@@ -36,6 +39,7 @@ class Params {
   AutoManualMode splitLineMode() const;
 
   void setSplitLineMode(AutoManualMode mode);
+  const QString& decisionReason() const { return m_decisionReason; }
 
   QDomElement toXml(QDomDocument& doc, const QString& name) const;
 
@@ -43,6 +47,7 @@ class Params {
   PageLayout m_layout;
   Dependencies m_deps;
   AutoManualMode m_splitLineMode;
+  QString m_decisionReason;
 };
 
 

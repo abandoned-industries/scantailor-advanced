@@ -44,6 +44,11 @@ class AppleVisionDetector {
     float confidence;
   };
 
+  struct RectangleResult {
+    QRectF bounds;       // Axis-aligned bounds in image coordinates.
+    float confidence;    // Vision observation confidence.
+  };
+
   /**
    * Page split detection result.
    */
@@ -56,6 +61,7 @@ class AppleVisionDetector {
     bool hasAnyPageNumber;   // True when a page number was detected on either side
     bool hasPageNumbers;     // True when page numbers were detected on both sides
     double rightmostLeftTextX;  // Normalized X of rightmost text region in left zone (0.0-1.0), 0 if none
+    QVector<TextRegion> textRegions;  // Same observations used for this decision
   };
 
   /**
@@ -69,6 +75,12 @@ class AppleVisionDetector {
    * @return Vector of detected text regions
    */
   static QVector<TextRegion> detectTextRegions(const QImage& image);
+
+  /**
+   * Detect multiple near-axis-aligned printed rectangles.  This is deliberately
+   * only a proposal source; callers must validate the interior semantics.
+   */
+  static QVector<RectangleResult> detectRectangles(const QImage& image);
 
   /**
    * Detect if an image contains two pages (like a book spread) and suggest split location.

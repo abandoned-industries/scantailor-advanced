@@ -10,7 +10,7 @@
 ## 1. Build
 
 ```bash
-cd /path/to/scantailor-spectre
+cd ~/scantailor-weasel
 cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH=$(brew --prefix qt6) \
@@ -36,7 +36,7 @@ everything with the Developer ID certificate. Components must be signed
 individually — `--deep` does not work reliably for Qt framework bundles.
 
 ```bash
-cd /path/to/scantailor-spectre/build
+cd ~/scantailor-weasel/build
 IDENTITY="Developer ID Application: Kazys Varnelis (PHCL25Z99X)"
 APP="ScanTailor Spectre.app"
 ```

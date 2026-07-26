@@ -181,7 +181,7 @@ void OptionsWidget::updateSelectionIndicator() {
 
 void OptionsWidget::thresholdChanged(int value) {
   m_settings->setMidtoneThreshold(value);
-  qDebug() << "Midtone threshold changed to" << value << "%";
+  qDebug() << "Picture detection sensitivity changed to" << value;
 }
 
 void OptionsWidget::applyToClicked() {

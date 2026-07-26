@@ -48,7 +48,7 @@ class OutputGenerator {
    * \param autoPictureMask If provided, the auto-detected picture mask
    *        will be written there.  It would only happen if automatic picture
    *        detection actually took place.  Otherwise, nothing will be
-   *        written into the provided image.  Black areas on the mask
+   *        written into the provided image.  White areas on the mask
    *        indicate pictures.  The manual zones aren't represented in it.
    * \param specklesImage If provided, the speckles removed from the
    *        binarized image will be written there.  It would only happen

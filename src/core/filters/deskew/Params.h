@@ -19,7 +19,10 @@ class Params {
  public:
   // Member-wise copying is OK.
 
-  Params(double deskewAngleDeg, const Dependencies& deps, AutoManualMode mode);
+  Params(double deskewAngleDeg,
+         const Dependencies& deps,
+         AutoManualMode mode,
+         const QString& decisionReason = QString());
 
   explicit Params(const QDomElement& deskewEl);
 
@@ -30,6 +33,7 @@ class Params {
   const Dependencies& dependencies() const;
 
   AutoManualMode mode() const;
+  const QString& decisionReason() const { return m_decisionReason; }
 
   QDomElement toXml(QDomDocument& doc, const QString& name) const;
 
@@ -37,6 +41,7 @@ class Params {
   double m_deskewAngleDeg;
   Dependencies m_deps;
   AutoManualMode m_mode;
+  QString m_decisionReason;
 };
 
 

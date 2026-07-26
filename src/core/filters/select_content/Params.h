@@ -51,6 +51,7 @@ class Params {
   AutoManualMode pageDetectionMode() const;
 
   bool isFineTuningEnabled() const;
+  const QString& decisionReason() const { return m_decisionReason; }
 
   void setContentDetectionMode(AutoManualMode mode);
 
@@ -65,6 +66,7 @@ class Params {
   void setDependencies(const Dependencies& deps);
 
   void setFineTuneCornersEnabled(bool fineTuneCorners);
+  void setDecisionReason(const QString& reason) { m_decisionReason = reason; }
 
  private:
   QRectF m_contentRect;
@@ -74,6 +76,7 @@ class Params {
   AutoManualMode m_contentDetectionMode;
   AutoManualMode m_pageDetectionMode;
   bool m_fineTuneCorners;
+  QString m_decisionReason;
 };
 
 

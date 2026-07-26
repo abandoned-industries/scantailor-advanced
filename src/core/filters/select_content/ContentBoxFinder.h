@@ -14,6 +14,7 @@ class FilterData;
 class QImage;
 class QRect;
 class QRectF;
+class QString;
 
 namespace imageproc {
 class BinaryImage;
@@ -31,7 +32,8 @@ class ContentBoxFinder {
                                const FilterData& data,
                                const QRectF& pageRect,
                                const std::shared_ptr<Settings>& settings = nullptr,
-                               DebugImages* dbg = nullptr);
+                               DebugImages* dbg = nullptr,
+                               QString* decisionReason = nullptr);
 
  private:
   class Garbage;

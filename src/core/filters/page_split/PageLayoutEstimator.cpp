@@ -37,6 +37,7 @@
 #include "ImageTransformation.h"
 #include "OrthogonalRotation.h"
 #include "PageLayout.h"
+#include "PlatePrior.h"
 #include "ProjectPages.h"
 #include "SpineDarknessFinder.h"
 #include "VertLineFinder.h"
@@ -179,13 +180,22 @@ PageLayout PageLayoutEstimator::estimatePageLayout(const LayoutType layoutType,
                                                    const QImage& input,
                                                    const ImageTransformation& preXform,
                                                    const BinaryThreshold bwThreshold,
-                                                   DebugImages* const dbg) {
+                                                   DebugImages* const dbg,
+                                                   QString* const decisionReason) {
   if (layoutType == SINGLE_PAGE_UNCUT) {
     return PageLayout(preXform.resultingRect());
   }
 
-  std::unique_ptr<PageLayout> layout(tryCutAtFoldingLine(layoutType, input, preXform, dbg));
+  std::unique_ptr<PageLayout> layout(
+      tryCutAtFoldingLine(layoutType, input, preXform, dbg, decisionReason));
   if (layout) {
+    if (decisionReason && layout->type() == PageLayout::SINGLE_PAGE_UNCUT
+        && *decisionReason
+            != QStringLiteral("vision_split_vetoed_near_square_no_gutter")
+        && PlatePrior::analyze(input).isPlate) {
+      *decisionReason =
+          QStringLiteral("plate_prior_continuous_tone_caption_scale_text_geometry_single");
+    }
     return *layout;
   }
   return cutAtWhitespace(layoutType, input, preXform, bwThreshold, dbg);
@@ -230,7 +240,8 @@ class BadTwoPageSplitter {
 std::unique_ptr<PageLayout> PageLayoutEstimator::tryCutAtFoldingLine(const LayoutType layoutType,
                                                                      const QImage& input,
                                                                      const ImageTransformation& preXform,
-                                                                     DebugImages* const dbg) {
+                                                                     DebugImages* const dbg,
+                                                                     QString* const decisionReason) {
   const int numPages = page_split::numPages(layoutType, preXform);
   const QRectF virtualImageRect(preXform.transform().mapRect(input.rect()));
 
@@ -257,8 +268,53 @@ std::unique_ptr<PageLayout> PageLayoutEstimator::tryCutAtFoldingLine(const Layou
           kVisionMaxDimension, kVisionMaxDimension, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     }
     const auto visionResult = AppleVisionDetector::detectPageSplit(visionInput);
+    const PlatePrior::Evidence platePrior = PlatePrior::analyze(visionInput);
+    QVector<QRectF> textBounds;
+    textBounds.reserve(visionResult.textRegions.size());
+    for (const auto& region : visionResult.textRegions) textBounds.append(region.bounds);
+    const PlatePrior::CaptionEvidence captionEvidence =
+        PlatePrior::analyzeCaptionText(textBounds, visionInput.size());
+    const PlatePrior::SpreadEvidence spreadEvidence =
+        PlatePrior::analyzeSpreadGeometry(input);
+    const auto recordNoGutterReason = [&]() {
+      if (decisionReason) {
+        *decisionReason =
+            spreadEvidence.aspectRatio < 1.25
+                ? QStringLiteral("near_square_no_gutter_evidence")
+                : QStringLiteral("moderate_aspect_no_uniform_gutter_evidence");
+      }
+    };
+    if (layoutType == AUTO_LAYOUT_TYPE && platePrior.isPlate
+        && captionEvidence.isCaptionScale && !spreadEvidence.isSpread) {
+      recordNoGutterReason();
+      qDebug() << SpineDarknessFinder::logPageTag()
+               << "PageLayoutEstimator:" << platePrior.reason << captionEvidence.reason
+               << spreadEvidence.reason
+               << "forcing SINGLE_PAGE_UNCUT";
+      return std::make_unique<PageLayout>(virtualImageRect);
+    }
     if (visionResult.shouldSplit && visionResult.confidence >= 0.60f
         && splitFractionIsCentral(visionResult.splitLineX)) {
+      // On AUTO, text columns alone are not physical evidence of two leaves.
+      // Accept affirmative Vision only when the page is at least moderately
+      // wide or the round-2 full-height uniform-gutter test independently
+      // finds a real separation. Forced TWO_PAGES remains unchanged.
+      const bool acceptAffirmativeVision =
+          layoutType == TWO_PAGES
+          || spreadEvidence.aspectRatio >= 1.25
+          || spreadEvidence.hasFullHeightGutter;
+      if (!acceptAffirmativeVision) {
+        if (decisionReason) {
+          *decisionReason =
+              QStringLiteral("vision_split_vetoed_near_square_no_gutter");
+        }
+        qDebug() << SpineDarknessFinder::logPageTag()
+                 << "PageLayoutEstimator: affirmative Vision split vetoed:"
+                 << spreadEvidence.reason << "aspect"
+                 << spreadEvidence.aspectRatio;
+        return std::make_unique<PageLayout>(virtualImageRect);
+      }
+
       // Convert Vision's normalized split position to image coordinates.
       const double visionSplitX = visionResult.splitLineX * virtualImageRect.width() + virtualImageRect.left();
 
@@ -373,6 +429,7 @@ std::unique_ptr<PageLayout> PageLayoutEstimator::tryCutAtFoldingLine(const Layou
         }
         // fall through
       } else {
+        recordNoGutterReason();
         qDebug() << SpineDarknessFinder::logPageTag() << "PageLayoutEstimator: [SPINE-FALLBACK] Vision uncertain"
                  << "(left:" << leftCount << "right:" << rightCount << ")"
                  << "and geometry says single (numPages=" << numPages << ") - returning single page layout";
@@ -385,6 +442,7 @@ std::unique_ptr<PageLayout> PageLayoutEstimator::tryCutAtFoldingLine(const Layou
       const double aspectRatio = static_cast<double>(input.width()) / input.height();
       if (aspectRatio < 0.85) {
         // Clearly portrait - definitely a single page
+        recordNoGutterReason();
         qDebug() << SpineDarknessFinder::logPageTag() << "PageLayoutEstimator: Vision found no text, aspect ratio" << aspectRatio
                  << "is portrait - returning single page layout";
         return std::make_unique<PageLayout>(virtualImageRect);  // Single page, no split
@@ -392,6 +450,28 @@ std::unique_ptr<PageLayout> PageLayoutEstimator::tryCutAtFoldingLine(const Layou
       // For square-ish or landscape images without text, fall through to traditional algorithm
       qDebug() << SpineDarknessFinder::logPageTag() << "PageLayoutEstimator: Vision found no text, aspect ratio" << aspectRatio
                << "- using traditional detection";
+    }
+  }
+
+  // AUTO layout may only reach the legacy line and whitespace splitters when
+  // the page itself has plausible spread geometry. A successful Vision text
+  // split has already returned above, while explicit TWO_PAGES continues
+  // untouched. This prevents square single leaves from inheriting the old
+  // "wider than tall means two pages" fallback.
+  if (layoutType == AUTO_LAYOUT_TYPE) {
+    const PlatePrior::SpreadEvidence spreadEvidence =
+        PlatePrior::analyzeSpreadGeometry(input);
+    if (!spreadEvidence.isSpread) {
+      if (decisionReason) {
+        *decisionReason =
+            spreadEvidence.aspectRatio < 1.25
+                ? QStringLiteral("near_square_no_gutter_evidence")
+                : QStringLiteral("moderate_aspect_no_uniform_gutter_evidence");
+      }
+      qDebug() << SpineDarknessFinder::logPageTag()
+               << "PageLayoutEstimator:" << spreadEvidence.reason
+               << "rejecting non-Vision AUTO split";
+      return std::make_unique<PageLayout>(virtualImageRect);
     }
   }
 

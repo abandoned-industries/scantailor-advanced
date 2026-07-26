@@ -15,6 +15,7 @@
 class TaskStatus;
 class QImage;
 class QSize;
+class QString;
 class Dpi;
 class DebugImages;
 
@@ -45,6 +46,15 @@ class Task {
   virtual ~Task();
 
   FilterResultPtr process(const TaskStatus& status, FilterData data);
+
+  /**
+   * Runs the same automatic angle detector used by process().
+   * Exposed for headless diagnostics and characterization tests.
+   */
+  static double detectAutoAngle(const TaskStatus& status,
+                                const FilterData& data,
+                                DebugImages* dbg = nullptr,
+                                QString* decisionReason = nullptr);
 
  private:
   class UiUpdater;

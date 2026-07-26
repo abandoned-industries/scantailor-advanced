@@ -3,6 +3,7 @@
 
 #include "Task.h"
 
+#include <AppleVisionDetector.h>
 #include <BinaryImage.h>
 #include <BlackOnWhiteEstimator.h>
 #include <Morphology.h>
@@ -27,6 +28,7 @@
 #include "FilterUiInterface.h"
 #include "ImageView.h"
 #include "OptionsWidget.h"
+#include "PlatePrior.h"
 #include "TaskStatus.h"
 #include "filters/page_box/Task.h"
 
@@ -98,7 +100,7 @@ FilterResultPtr Task::process(const TaskStatus& status, FilterData data) {
       uiData.setEffectiveDeskewAngle(params->deskewAngle());
       uiData.setMode(params->mode());
 
-      Params newParams(uiData.effectiveDeskewAngle(), deps, uiData.mode());
+      Params newParams(uiData.effectiveDeskewAngle(), deps, uiData.mode(), params->decisionReason());
       m_settings->setPageParams(m_pageId, newParams);
     }
   }
@@ -110,34 +112,11 @@ FilterResultPtr Task::process(const TaskStatus& status, FilterData data) {
     status.throwIfCancelled();
 
     if (boundedImageArea.isValid()) {
-      BinaryImage rotatedImage(orthogonalRotation(
-          BinaryImage(data.grayImageBlackOnWhite(), boundedImageArea, data.bwThresholdBlackOnWhite()),
-          data.xform().preRotation().toDegrees()));
-      if (m_dbg) {
-        m_dbg->add(rotatedImage, "bw_rotated");
-      }
-
-      const QSize unrotatedDpm(Dpm(data.origImage()).toSize());
-      const Dpm rotatedDpm(data.xform().preRotation().rotate(unrotatedDpm));
-      cleanup(status, rotatedImage, Dpi(rotatedDpm));
-      if (m_dbg) {
-        m_dbg->add(rotatedImage, "after_cleanup");
-      }
-
-      status.throwIfCancelled();
-
-      SkewFinder skewFinder;
-      skewFinder.setResolutionRatio((double) rotatedDpm.horizontal() / rotatedDpm.vertical());
-      const Skew skew(skewFinder.findSkew(rotatedImage));
-
-      if (skew.confidence() >= Skew::GOOD_CONFIDENCE) {
-        uiData.setEffectiveDeskewAngle(-skew.angle());
-      } else {
-        uiData.setEffectiveDeskewAngle(0);
-      }
+      QString decisionReason;
+      uiData.setEffectiveDeskewAngle(detectAutoAngle(status, data, m_dbg.get(), &decisionReason));
       uiData.setMode(MODE_AUTO);
 
-      Params newParams(uiData.effectiveDeskewAngle(), deps, uiData.mode());
+      Params newParams(uiData.effectiveDeskewAngle(), deps, uiData.mode(), decisionReason);
       m_settings->setPageParams(m_pageId, newParams);
 
       status.throwIfCancelled();
@@ -154,6 +133,61 @@ FilterResultPtr Task::process(const TaskStatus& status, FilterData data) {
                                        m_batchProcessing);
   }
 }  // Task::process
+
+double Task::detectAutoAngle(const TaskStatus& status,
+                             const FilterData& data,
+                             DebugImages* dbg,
+                             QString* decisionReason) {
+  const PlatePrior::Evidence platePrior = PlatePrior::analyze(data.origImage());
+  if (platePrior.isPlate) {
+    constexpr int kVisionMaxDimension = 1800;
+    QImage visionInput = data.origImage();
+    if (std::max(visionInput.width(), visionInput.height()) > kVisionMaxDimension) {
+      visionInput = visionInput.scaled(kVisionMaxDimension, kVisionMaxDimension,
+                                       Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
+    const auto text = AppleVisionDetector::detectTextRegions(visionInput);
+    QVector<QRectF> textBounds;
+    textBounds.reserve(text.size());
+    for (const auto& region : text) textBounds.append(region.bounds);
+    const PlatePrior::CaptionEvidence captionEvidence =
+        PlatePrior::analyzeCaptionText(textBounds, visionInput.size());
+    if (captionEvidence.isCaptionScale) {
+      if (decisionReason) {
+        *decisionReason =
+            QStringLiteral("plate_prior_continuous_tone_caption_scale_text");
+      }
+      qDebug() << "deskew::Task:" << platePrior.reason << captionEvidence.reason
+               << "forcing angle 0";
+      return 0.0;
+    }
+  }
+  const QRectF imageArea(data.xform().transformBack().mapRect(data.xform().resultingRect()));
+  const QRect boundedImageArea(imageArea.toRect().intersected(data.origImage().rect()));
+  if (!boundedImageArea.isValid()) {
+    return 0.0;
+  }
+
+  BinaryImage rotatedImage(orthogonalRotation(
+      BinaryImage(data.grayImageBlackOnWhite(), boundedImageArea, data.bwThresholdBlackOnWhite()),
+      data.xform().preRotation().toDegrees()));
+  if (dbg) {
+    dbg->add(rotatedImage, "bw_rotated");
+  }
+
+  const QSize unrotatedDpm(Dpm(data.origImage()).toSize());
+  const Dpm rotatedDpm(data.xform().preRotation().rotate(unrotatedDpm));
+  cleanup(status, rotatedImage, Dpi(rotatedDpm));
+  if (dbg) {
+    dbg->add(rotatedImage, "after_cleanup");
+  }
+
+  status.throwIfCancelled();
+  SkewFinder skewFinder;
+  skewFinder.setResolutionRatio((double) rotatedDpm.horizontal() / rotatedDpm.vertical());
+  const Skew skew(skewFinder.findSkew(rotatedImage));
+  return skew.confidence() >= Skew::GOOD_CONFIDENCE ? -skew.angle() : 0.0;
+}
 
 void Task::cleanup(const TaskStatus& status, BinaryImage& image, const Dpi& dpi) {
   // We don't have to clean up every piece of garbage.

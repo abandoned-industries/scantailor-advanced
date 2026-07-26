@@ -104,6 +104,7 @@ FilterResultPtr Task::process(const TaskStatus& status, const FilterData& data) 
     LayoutType newLayoutType = record.combinedLayoutType();
     AutoManualMode splitLineMode = MODE_AUTO;
     PageLayout newLayout;
+    QString decisionReason = params ? params->decisionReason() : QString();
 
     // Force re-detection when the cached layout is an auto-detected
     // SINGLE_PAGE_UNCUT result. The original auto-detection may predate
@@ -128,7 +129,7 @@ FilterResultPtr Task::process(const TaskStatus& status, const FilterData& data) 
                 .arg(m_pageInfo.imageId().page())
                 .arg(m_pageInfo.id().subPageAsString()));
         newLayout = PageLayoutEstimator::estimatePageLayout(record.combinedLayoutType(), data.grayImage(), data.xform(),
-                                                            data.bwThreshold(), m_dbg.get());
+                                                            data.bwThreshold(), m_dbg.get(), &decisionReason);
         SpineDarknessFinder::setLogPageTag(QString());
 
         status.throwIfCancelled();
@@ -152,7 +153,7 @@ FilterResultPtr Task::process(const TaskStatus& status, const FilterData& data) 
       }
     }
     deps.setLayoutType(newLayoutType);
-    const Params newParams(newLayout, deps, splitLineMode);
+    const Params newParams(newLayout, deps, splitLineMode, decisionReason);
 
     Settings::UpdateAction update;
     update.setLayoutType(newLayoutType);

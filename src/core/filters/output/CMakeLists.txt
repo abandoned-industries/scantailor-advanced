@@ -21,6 +21,7 @@ set(sources
     Task.cpp Task.h
     CacheDrivenTask.cpp CacheDrivenTask.h
     OutputGenerator.cpp OutputGenerator.h
+    PictureRegionMask.cpp PictureRegionMask.h
     OutputMargins.h
     Settings.cpp Settings.h
     Thumbnail.cpp Thumbnail.h

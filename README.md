@@ -2,11 +2,19 @@
 
 <img width="256" height="256" alt="scantailor-spectre" src="https://github.com/user-attachments/assets/a3988c3d-d80e-4089-9418-2bd8302b4b63" />
 
-**Version 2.0a34** | macOS (Apple Silicon) | Requires macOS 15 or later
+**Version 2.0a35** | macOS (Apple Silicon) | Requires macOS 15 or later
 
 ScanTailor Spectre transforms raw scans into clean, publication-ready pages. Import a PDF or folder of images, process through a 10-stage workflow, and export a polished, searchable PDF.
 
 ScanTailor Spectre is not intended for copyrighted works, but rather for works that you have the rights to or are in the public domain.
+
+## Version 2.0a35
+
+- The pipeline is now photograph-aware. Validated page-by-page against a 268-page photography monograph alongside the existing text-book corpus.
+- Color detection rebuilt on spatial evidence: full-page photographic plates lost to B&W binarization dropped from 139/185 to 4/185; all 19 mixed text+photo pages now correctly preserve their photographs; text-page classification remains exact.
+- Geometry stages no longer treat photographs as documents: photo pages are not split, not rotated by scene edges, and keep full-page content. Near-square single leaves never auto-split without physical gutter evidence — two-column layouts no longer masquerade as spreads. Every automatic decision records its reason in the project file.
+- Mixed-mode output finds each photograph's printed frame and fills it to exact edges; bright regions inside photos (faces, skies) are no longer bleached to paper.
+- Detection results are versioned: improved future detectors automatically re-judge stale automatic decisions while manual choices stay authoritative.
 
 ## Version 2.0a34 — The Second Speed Build
 

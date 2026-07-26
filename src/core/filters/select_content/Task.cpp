@@ -115,7 +115,10 @@ FilterResultPtr Task::process(const TaskStatus& status, const FilterData& data) 
 
     if (needUpdateContentBox) {
       if (newParams.contentDetectionMode() == MODE_AUTO) {
-        contentRect = ContentBoxFinder::findContentBox(status, data, pageRect, m_settings, m_dbg.get());
+        QString decisionReason;
+        contentRect = ContentBoxFinder::findContentBox(
+            status, data, pageRect, m_settings, m_dbg.get(), &decisionReason);
+        newParams.setDecisionReason(decisionReason);
       } else if (newParams.contentDetectionMode() == MODE_DISABLED) {
         contentRect = pageRect;
       }

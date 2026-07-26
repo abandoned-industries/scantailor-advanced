@@ -178,6 +178,14 @@ cmake --build . --target scantailor_bundle                # explicit bundle/depl
 # Bundle Qt frameworks manually only if needed
 macdeployqt "ScanTailor Spectre.app" -always-overwrite
 
+# ⚠️ NEVER run macdeployqt on the app inside build/ — deploy only a COPY staged
+# outside build/ (e.g. release-staging/). A deployed bundle in build/ breaks every
+# later incremental dev build: the fresh executable links Homebrew Qt while the
+# bundle's stale qt.conf/PlugIns force the old bundled cocoa plugin, and the app
+# aborts at launch (qt.qpa.plugin cocoa error; bitten 2026-07-23 and 2026-07-25).
+# Cure if it happens: rm -rf Contents/{Frameworks,PlugIns,Resources/qt.conf,Resources/qml}
+# from the build/ app.
+
 # RELEASE PREP — Update README and generate PDF for DMG
 # 1. Update README.md with version number, date, and changelog
 # 2. Generate PDF:

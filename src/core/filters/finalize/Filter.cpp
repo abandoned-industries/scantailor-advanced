@@ -65,6 +65,7 @@ void Filter::preUpdateUI(FilterUiInterface* ui, const PageInfo& pageInfo) {
 
 QDomElement Filter::saveSettings(const ProjectWriter& writer, QDomDocument& doc) const {
   QDomElement filterEl(doc.createElement("finalize"));
+  filterEl.setAttribute("pictureDetectionSensitivity", m_settings->midtoneThreshold());
 
   writer.enumPages(
       [&](const PageId& pageId, int numericId) { this->writePageSettings(doc, filterEl, pageId, numericId); });
@@ -91,6 +92,8 @@ void Filter::loadSettings(const ProjectReader& reader, const QDomElement& filter
   if (filterEl.isNull()) {
     return;
   }
+  m_settings->setMidtoneThreshold(
+      filterEl.attribute("pictureDetectionSensitivity", "8").toInt());
 
   const QString pageTagName("page");
   QDomNode node(filterEl.firstChild());

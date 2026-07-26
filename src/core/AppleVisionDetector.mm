@@ -232,6 +232,47 @@ QVector<AppleVisionDetector::TextRegion> AppleVisionDetector::detectTextRegions(
   return regions;
 }
 
+QVector<AppleVisionDetector::RectangleResult> AppleVisionDetector::detectRectangles(
+    const QImage& image) {
+  QVector<RectangleResult> rectangles;
+  if (!isAvailable() || image.isNull()) {
+    return rectangles;
+  }
+
+  @autoreleasepool {
+    CGImageRef cgImage = createCGImageFromQImage(image);
+    if (!cgImage) {
+      return rectangles;
+    }
+
+    VNDetectRectanglesRequest* request = [[VNDetectRectanglesRequest alloc] init];
+    request.maximumObservations = 32;
+    request.minimumSize = 0.06f;
+    request.minimumAspectRatio = 0.12f;
+    request.maximumAspectRatio = 1.0f;
+    request.quadratureTolerance = 12.0f;
+    request.minimumConfidence = 0.25f;
+
+    NSArray* observations = performVisionRequest(request, cgImage);
+    CGImageRelease(cgImage);
+    const qreal width = image.width();
+    const qreal height = image.height();
+    for (VNRectangleObservation* observation in observations) {
+      const CGRect box = observation.boundingBox;
+      RectangleResult result;
+      result.bounds = QRectF(box.origin.x * width,
+                             (1.0 - box.origin.y - box.size.height) * height,
+                             box.size.width * width,
+                             box.size.height * height);
+      result.confidence = observation.confidence;
+      if (!result.bounds.isEmpty()) {
+        rectangles.push_back(result);
+      }
+    }
+  }
+  return rectangles;
+}
+
 AppleVisionDetector::PageSplitResult AppleVisionDetector::detectPageSplit(const QImage& image) {
   PageSplitResult result;
   result.shouldSplit = false;
@@ -266,6 +307,7 @@ AppleVisionDetector::PageSplitResult AppleVisionDetector::detectPageSplit(const 
 
   // Detect text regions
   QVector<TextRegion> regions = detectTextRegions(image);
+  result.textRegions = regions;
 
   if (regions.isEmpty()) {
     qDebug() << "PageSplit: no text regions detected";

@@ -16,6 +16,7 @@ class TaskStatus;
 class FilterData;
 class QImage;
 class QPolygonF;
+class QRect;
 
 namespace output {
 class Settings;
@@ -44,7 +45,7 @@ class Task {
  private:
   class UiUpdater;
 
-  void detectColorMode(const QImage& image);
+  void detectColorMode(const QImage& image, const QRect& sourceRect, const TaskStatus& status);
 
   std::shared_ptr<Filter> m_filter;
   std::shared_ptr<AbstractOutputTask> m_nextTask;

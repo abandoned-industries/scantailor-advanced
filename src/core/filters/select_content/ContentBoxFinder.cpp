@@ -4,6 +4,7 @@
 #include "ContentBoxFinder.h"
 
 #include <Binarize.h>
+#include <AppleVisionDetector.h>
 #include <BinaryImage.h>
 #include <ConnComp.h>
 #include <ConnCompEraserExt.h>
@@ -29,6 +30,7 @@
 #include "DebugImages.h"
 #include "Despeckle.h"
 #include "FilterData.h"
+#include "PlatePrior.h"
 #include "Settings.h"
 #include "TaskStatus.h"
 
@@ -73,7 +75,8 @@ QRectF ContentBoxFinder::findContentBox(const TaskStatus& status,
                                         const FilterData& data,
                                         const QRectF& pageRect,
                                         const std::shared_ptr<Settings>& settings,
-                                        DebugImages* dbg) {
+                                        DebugImages* dbg,
+                                        QString* decisionReason) {
   // Get detection parameters from settings, or use defaults
   const double maxFillFactorSetting = settings ? settings->contentFillFactor() : 0.65;
   const int borderToleranceSetting = settings ? settings->borderTolerance() : 2;
@@ -83,6 +86,31 @@ QRectF ContentBoxFinder::findContentBox(const TaskStatus& status,
   // and just use the page rectangle as content.
   if (maxFillFactorSetting >= 0.95) {
     return pageRect;
+  }
+
+  const PlatePrior::Evidence platePrior = PlatePrior::analyze(data.origImage());
+  if (platePrior.isPlate) {
+    constexpr int kVisionMaxDimension = 1800;
+    QImage visionInput = data.origImage();
+    if (std::max(visionInput.width(), visionInput.height()) > kVisionMaxDimension) {
+      visionInput = visionInput.scaled(kVisionMaxDimension, kVisionMaxDimension,
+                                       Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
+    const auto text = AppleVisionDetector::detectTextRegions(visionInput);
+    QVector<QRectF> textBounds;
+    textBounds.reserve(text.size());
+    for (const auto& region : text) textBounds.append(region.bounds);
+    const PlatePrior::CaptionEvidence captionEvidence =
+        PlatePrior::analyzeCaptionText(textBounds, visionInput.size());
+    if (captionEvidence.isCaptionScale) {
+      if (decisionReason) {
+        *decisionReason =
+            QStringLiteral("plate_prior_continuous_tone_caption_scale_text");
+      }
+      qDebug() << "ContentBoxFinder:" << platePrior.reason << captionEvidence.reason
+               << "using page box";
+      return pageRect;
+    }
   }
 
   ImageTransformation xform150dpi(data.xform());

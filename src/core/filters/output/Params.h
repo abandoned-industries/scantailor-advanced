@@ -5,6 +5,10 @@
 #define SCANTAILOR_OUTPUT_PARAMS_H_
 
 #include <dewarping/DistortionModel.h>
+#include <QRect>
+#include <QSize>
+#include <QString>
+#include <QVector>
 
 #include "ColorParams.h"
 #include "DepthPerception.h"
@@ -17,6 +21,73 @@ class QDomDocument;
 class QDomElement;
 
 namespace output {
+class ContinuousToneRegions {
+ public:
+  const QSize& analysisSize() const { return m_analysisSize; }
+  void setAnalysisSize(const QSize& size) { m_analysisSize = size; }
+
+  const QRect& sourceRect() const { return m_sourceRect; }
+  void setSourceRect(const QRect& rect) { m_sourceRect = rect; }
+
+  const QVector<QRect>& bounds() const { return m_bounds; }
+  void setBounds(const QVector<QRect>& bounds) { m_bounds = bounds; }
+
+  bool isEmpty() const {
+    return !m_analysisSize.isValid() || m_sourceRect.isEmpty() || m_bounds.isEmpty();
+  }
+
+  bool operator==(const ContinuousToneRegions& other) const {
+    return m_analysisSize == other.m_analysisSize
+           && m_sourceRect == other.m_sourceRect
+           && m_bounds == other.m_bounds;
+  }
+
+  bool operator!=(const ContinuousToneRegions& other) const { return !(*this == other); }
+
+ private:
+  QSize m_analysisSize;
+  QRect m_sourceRect;
+  QVector<QRect> m_bounds;
+};
+
+struct PictureFrame {
+  QRect bounds;
+  QString reason;
+
+  bool operator==(const PictureFrame& other) const {
+    return bounds == other.bounds && reason == other.reason;
+  }
+};
+
+class PictureFrames {
+ public:
+  const QSize& analysisSize() const { return m_analysisSize; }
+  void setAnalysisSize(const QSize& size) { m_analysisSize = size; }
+
+  const QRect& sourceRect() const { return m_sourceRect; }
+  void setSourceRect(const QRect& rect) { m_sourceRect = rect; }
+
+  const QVector<PictureFrame>& frames() const { return m_frames; }
+  void setFrames(const QVector<PictureFrame>& frames) { m_frames = frames; }
+
+  bool isEmpty() const {
+    return !m_analysisSize.isValid() || m_sourceRect.isEmpty() || m_frames.isEmpty();
+  }
+
+  bool operator==(const PictureFrames& other) const {
+    return m_analysisSize == other.m_analysisSize
+           && m_sourceRect == other.m_sourceRect
+           && m_frames == other.m_frames;
+  }
+
+  bool operator!=(const PictureFrames& other) const { return !(*this == other); }
+
+ private:
+  QSize m_analysisSize;
+  QRect m_sourceRect;
+  QVector<PictureFrame> m_frames;
+};
+
 class Params {
  public:
   Params();
@@ -70,6 +141,14 @@ class Params {
 
   void setBlackOnWhite(bool isBlackOnWhite);
 
+  const ContinuousToneRegions& continuousToneRegions() const;
+
+  void setContinuousToneRegions(const ContinuousToneRegions& regions);
+
+  const PictureFrames& pictureFrames() const;
+
+  void setPictureFrames(const PictureFrames& frames);
+
  private:
   Dpi m_dpi;
   ColorParams m_colorParams;
@@ -80,6 +159,8 @@ class Params {
   DewarpingOptions m_dewarpingOptions;
   double m_despeckleLevel;
   bool m_blackOnWhite;
+  ContinuousToneRegions m_continuousToneRegions;
+  PictureFrames m_pictureFrames;
 };
 
 
@@ -153,6 +234,22 @@ inline bool Params::isBlackOnWhite() const {
 
 inline void Params::setBlackOnWhite(bool isBlackOnWhite) {
   Params::m_blackOnWhite = isBlackOnWhite;
+}
+
+inline const ContinuousToneRegions& Params::continuousToneRegions() const {
+  return m_continuousToneRegions;
+}
+
+inline void Params::setContinuousToneRegions(const ContinuousToneRegions& regions) {
+  m_continuousToneRegions = regions;
+}
+
+inline const PictureFrames& Params::pictureFrames() const {
+  return m_pictureFrames;
+}
+
+inline void Params::setPictureFrames(const PictureFrames& frames) {
+  m_pictureFrames = frames;
 }
 }  // namespace output
 #endif  // ifndef SCANTAILOR_OUTPUT_PARAMS_H_

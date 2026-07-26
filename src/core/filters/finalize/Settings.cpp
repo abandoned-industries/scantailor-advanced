@@ -13,6 +13,7 @@
 #include "AbstractRelinker.h"
 #include "PageSequence.h"
 #include "RelinkablePath.h"
+#include "LeptonicaDetector.h"
 
 namespace finalize {
 
@@ -35,6 +36,10 @@ Params::Params(const QDomElement& el) {
   m_colorModeDetected = (el.attribute("detected", "0") == "1");
   m_processed = (el.attribute("processed", "0") == "1");
   m_forceWhiteBalance = (el.attribute("forceWB", "0") == "1");
+  m_automaticDetection =
+      (el.attribute("automaticDetection", m_colorModeDetected ? "1" : "0") == "1");
+  m_detectorSchemaVersion = el.attribute("detectorVersion", "0").toInt();
+  m_detectionSensitivity = el.attribute("detectionSensitivity", "-1").toInt();
 }
 
 QDomElement Params::toXml(QDomDocument& doc, const QString& name) const {
@@ -60,6 +65,13 @@ QDomElement Params::toXml(QDomDocument& doc, const QString& name) const {
   el.setAttribute("processed", m_processed ? "1" : "0");
   if (m_forceWhiteBalance) {
     el.setAttribute("forceWB", "1");
+  }
+  if (m_colorModeDetected) {
+    el.setAttribute("automaticDetection", m_automaticDetection ? "1" : "0");
+  }
+  if (m_automaticDetection) {
+    el.setAttribute("detectorVersion", m_detectorSchemaVersion);
+    el.setAttribute("detectionSensitivity", m_detectionSensitivity);
   }
 
   return el;
@@ -106,6 +118,17 @@ void Settings::setColorMode(const PageId& pageId, ColorMode mode) {
   auto& params = m_perPageParams[pageId];
   params.setColorMode(mode);
   params.setColorModeDetected(true);
+  params.setAutomaticDetection(false);
+}
+
+void Settings::setDetectedColorMode(const PageId& pageId, ColorMode mode) {
+  const QMutexLocker locker(&m_mutex);
+  auto& params = m_perPageParams[pageId];
+  params.setColorMode(mode);
+  params.setColorModeDetected(true);
+  params.setAutomaticDetection(true);
+  params.setDetectorSchemaVersion(LeptonicaDetector::DETECTOR_SCHEMA_VERSION);
+  params.setDetectionSensitivity(m_midtoneThreshold);
 }
 
 ColorMode Settings::getColorMode(const PageId& pageId) const {
@@ -134,13 +157,18 @@ bool Settings::isProcessed(const PageId& pageId) const {
 bool Settings::isColorModeDetectionNeeded(const PageId& pageId) const {
   const QMutexLocker locker(&m_mutex);
   const auto it = m_perPageParams.find(pageId);
-  return it == m_perPageParams.end() || !it->second.isColorModeDetected();
+  if (it == m_perPageParams.end() || !it->second.isColorModeDetected()) return true;
+  const Params& params = it->second;
+  return params.isAutomaticDetection()
+         && (params.detectorSchemaVersion() != LeptonicaDetector::DETECTOR_SCHEMA_VERSION
+             || params.detectionSensitivity() != m_midtoneThreshold);
 }
 
 void Settings::clearDetectionCache() {
   const QMutexLocker locker(&m_mutex);
   for (auto& [pageId, params] : m_perPageParams) {
     params.setColorModeDetected(false);
+    params.setAutomaticDetection(false);
     params.setProcessed(false);
   }
 }
@@ -150,6 +178,7 @@ void Settings::clearDetectionCacheForPage(const PageId& pageId) {
   const auto it = m_perPageParams.find(pageId);
   if (it != m_perPageParams.end()) {
     it->second.setColorModeDetected(false);
+    it->second.setAutomaticDetection(false);
     it->second.setProcessed(false);
   }
 }
@@ -162,6 +191,23 @@ void Settings::setAutoColorModePolicy(AutoColorModePolicy policy) {
 AutoColorModePolicy Settings::autoColorModePolicy() const {
   const QMutexLocker locker(&m_mutex);
   return m_autoColorModePolicy;
+}
+
+int Settings::midtoneThreshold() const {
+  const QMutexLocker locker(&m_mutex);
+  return m_midtoneThreshold;
+}
+
+void Settings::setMidtoneThreshold(const int threshold) {
+  const QMutexLocker locker(&m_mutex);
+  if (m_midtoneThreshold == threshold) return;
+  m_midtoneThreshold = threshold;
+  for (auto& [pageId, params] : m_perPageParams) {
+    if (params.isAutomaticDetection()) {
+      params.setColorModeDetected(false);
+      params.setProcessed(false);
+    }
+  }
 }
 
 void Settings::setForceWhiteBalance(const PageId& pageId, bool force) {

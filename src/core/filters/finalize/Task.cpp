@@ -24,6 +24,7 @@
 #include "filters/output/ColorParams.h"
 #include "filters/output/Settings.h"
 #include "LeptonicaDetector.h"
+#include "PhotoFrameDetector.h"
 
 namespace finalize {
 
@@ -80,8 +81,16 @@ FilterResultPtr Task::process(const TaskStatus& status, const FilterData& data, 
   // An explicit Output mode is authoritative, whether selected directly by
   // the user or applied by the Force B&W auto-process preset.
   if (m_outputSettings && !m_outputSettings->isParamsNull(m_pageId)) {
-    const output::ColorParams colorParams = m_outputSettings->getParams(m_pageId).colorParams();
+    output::Params explicitOutputParams = m_outputSettings->getParams(m_pageId);
+    const output::ColorParams colorParams = explicitOutputParams.colorParams();
     if (colorParams.isColorModeUserSet()) {
+      if (!explicitOutputParams.continuousToneRegions().isEmpty()
+          || !explicitOutputParams.pictureFrames().isEmpty()) {
+        explicitOutputParams.setContinuousToneRegions(output::ContinuousToneRegions());
+        explicitOutputParams.setPictureFrames(output::PictureFrames());
+        m_outputSettings->setParams(m_pageId, explicitOutputParams);
+        m_outputSettings->removeOutputParams(m_pageId);
+      }
       ColorMode mode = ColorMode::Grayscale;
       switch (colorParams.colorMode()) {
         case output::BLACK_AND_WHITE:
@@ -141,10 +150,10 @@ FilterResultPtr Task::process(const TaskStatus& status, const FilterData& data, 
             image.width(), image.height(),
             contentBox.x(), contentBox.y(), contentBox.width(), contentBox.height());
     if (contentBox.isValid() && contentBox.width() > 100 && contentBox.height() > 100) {
-      detectColorMode(imageForDetection.copy(contentBox));
+      detectColorMode(imageForDetection.copy(contentBox), contentBox, status);
     } else {
       // Fallback to full image if crop is too small
-      detectColorMode(imageForDetection);
+      detectColorMode(imageForDetection, imageForDetection.rect(), status);
     }
   } else {
     qDebug() << "Finalize: Skipping detection - already cached as"
@@ -174,13 +183,28 @@ FilterResultPtr Task::process(const TaskStatus& status, const FilterData& data, 
 
       output::Params outputParams = m_outputSettings->getParams(m_pageId);
       output::ColorParams colorParams = outputParams.colorParams();
+      bool outputParamsChanged = false;
+      const bool cachedAutomaticMixed =
+          existingParams->isAutomaticDetection() && cachedMode == ColorMode::Mixed;
+      if (!cachedAutomaticMixed && !outputParams.continuousToneRegions().isEmpty()) {
+        outputParams.setContinuousToneRegions(output::ContinuousToneRegions());
+        outputParamsChanged = true;
+      }
+      if (!cachedAutomaticMixed && !outputParams.pictureFrames().isEmpty()) {
+        outputParams.setPictureFrames(output::PictureFrames());
+        outputParamsChanged = true;
+      }
       if (m_outputSettings->isParamsNull(m_pageId)
           || (!colorParams.isColorModeUserSet() && colorParams.colorMode() != outputMode)) {
         colorParams.setColorMode(outputMode);
         colorParams.setColorModeUserSet(false);
         colorParams.setColorModePresetSet(false);
         outputParams.setColorParams(colorParams);
+        outputParamsChanged = true;
+      }
+      if (outputParamsChanged) {
         m_outputSettings->setParams(m_pageId, outputParams);
+        m_outputSettings->removeOutputParams(m_pageId);
       }
     }
   }
@@ -202,7 +226,9 @@ FilterResultPtr Task::process(const TaskStatus& status, const FilterData& data, 
   return std::make_shared<UiUpdater>(m_filter, m_pageId, image, data.xform(), colorMode, m_batchProcessing);
 }
 
-void Task::detectColorMode(const QImage& image) {
+void Task::detectColorMode(const QImage& image,
+                           const QRect& sourceRect,
+                           const TaskStatus& status) {
   ColorMode mode = ColorMode::Grayscale;
   output::ColorMode outputMode = output::GRAYSCALE;
 
@@ -210,7 +236,11 @@ void Task::detectColorMode(const QImage& image) {
   // catches aged/toned paper whose tint would otherwise read as COLOR
   // even when margin-based white balance had nothing to sample.
   const int threshold = m_settings->midtoneThreshold();
-  const LeptonicaDetector::ColorType colorType = LeptonicaDetector::detectWithCastCompensation(image, threshold);
+  LeptonicaDetector::DetectionEvidence evidence;
+  const LeptonicaDetector::ColorType colorType =
+      LeptonicaDetector::detectWithCastCompensation(
+          image, threshold, &evidence,
+          LeptonicaDetector::AnalysisScalePolicy::productionDefault(), &status);
 
   switch (colorType) {
     case LeptonicaDetector::ColorType::BlackWhite:
@@ -255,7 +285,7 @@ void Task::detectColorMode(const QImage& image) {
   fflush(stderr);
 
   // Store in finalize settings
-  m_settings->setColorMode(m_pageId, mode);
+  m_settings->setDetectedColorMode(m_pageId, mode);
 
   // Also set in output::Settings so output filter uses our detection
   if (m_outputSettings) {
@@ -265,7 +295,45 @@ void Task::detectColorMode(const QImage& image) {
     colorParams.setColorModeUserSet(false);  // Mark as auto-detected, not user-set
     colorParams.setColorModePresetSet(false);
     outputParams.setColorParams(colorParams);
+    output::ContinuousToneRegions continuousToneRegions;
+    if (colorType == LeptonicaDetector::ColorType::Mixed
+        && evidence.analysisSize.isValid()
+        && !sourceRect.isEmpty()
+        && !evidence.largestRegionBounds.isEmpty()) {
+      continuousToneRegions.setAnalysisSize(evidence.analysisSize);
+      continuousToneRegions.setSourceRect(sourceRect);
+      continuousToneRegions.setBounds(
+          evidence.regionBounds.isEmpty()
+              ? QVector<QRect>{evidence.largestRegionBounds}
+              : evidence.regionBounds);
+    }
+    outputParams.setContinuousToneRegions(continuousToneRegions);
+    output::PictureFrames pictureFrames;
+    if (colorType == LeptonicaDetector::ColorType::Mixed
+        && evidence.analysisSize.isValid() && !sourceRect.isEmpty()) {
+      const PhotoFrameDetector::Result frameResult =
+          PhotoFrameDetector::detect(image, evidence);
+      QVector<output::PictureFrame> acceptedFrames;
+      acceptedFrames.reserve(frameResult.acceptedFrames.size());
+      for (const PhotoFrameDetector::AcceptedFrame& frame :
+           frameResult.acceptedFrames) {
+        acceptedFrames.push_back(output::PictureFrame{frame.bounds, frame.reason});
+      }
+      if (!acceptedFrames.isEmpty()) {
+        pictureFrames.setAnalysisSize(evidence.analysisSize);
+        pictureFrames.setSourceRect(sourceRect);
+        pictureFrames.setFrames(acceptedFrames);
+      }
+      qDebug() << "Finalize: frame proposals vision/cv/accepted"
+               << frameResult.visionCandidates.size()
+               << frameResult.cvCandidates.size()
+               << frameResult.acceptedFrames.size();
+    }
+    outputParams.setPictureFrames(pictureFrames);
     m_outputSettings->setParams(m_pageId, outputParams);
+    // A new evidence rectangle can change pixels even when the effective color
+    // mode is still MIXED, so invalidate the prior rendered-output cache.
+    m_outputSettings->removeOutputParams(m_pageId);
     qDebug() << "Finalize: set output color params for page" << m_pageId.imageId().filePath()
              << "outputMode:" << outputMode;
   }

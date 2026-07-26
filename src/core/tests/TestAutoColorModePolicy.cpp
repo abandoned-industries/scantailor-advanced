@@ -5,6 +5,7 @@
 #include "PageId.h"
 #include "filters/finalize/Settings.h"
 #include "filters/output/ColorParams.h"
+#include "LeptonicaDetector.h"
 
 BOOST_AUTO_TEST_SUITE(AutoColorModePolicyTestSuite)
 
@@ -109,6 +110,45 @@ BOOST_AUTO_TEST_CASE(clear_detection_cache_makes_every_seeded_page_undecided) {
     BOOST_CHECK(finalizeSettings.isColorModeDetectionNeeded(pageId));
     BOOST_CHECK(!finalizeSettings.isProcessed(pageId));
   }
+}
+
+BOOST_AUTO_TEST_CASE(detector_version_and_sensitivity_invalidate_only_automatic_verdicts) {
+  finalize::Settings settings;
+  const PageId automatic(ImageId(QStringLiteral("/tmp/automatic.tif"), 0));
+  const PageId manual(ImageId(QStringLiteral("/tmp/manual.tif"), 0));
+
+  settings.setDetectedColorMode(automatic, finalize::ColorMode::BlackAndWhite);
+  settings.setColorMode(manual, finalize::ColorMode::Color);
+  BOOST_CHECK(!settings.isColorModeDetectionNeeded(automatic));
+  BOOST_CHECK(!settings.isColorModeDetectionNeeded(manual));
+
+  std::unique_ptr<finalize::Params> stale = settings.getParams(automatic);
+  BOOST_REQUIRE(stale);
+  stale->setDetectorSchemaVersion(LeptonicaDetector::DETECTOR_SCHEMA_VERSION - 1);
+  settings.setParams(automatic, *stale);
+  BOOST_CHECK(settings.isColorModeDetectionNeeded(automatic));
+  BOOST_CHECK(!settings.isColorModeDetectionNeeded(manual));
+
+  settings.setDetectedColorMode(automatic, finalize::ColorMode::BlackAndWhite);
+  settings.setMidtoneThreshold(settings.midtoneThreshold() + 1);
+  BOOST_CHECK(settings.isColorModeDetectionNeeded(automatic));
+  BOOST_CHECK(!settings.isColorModeDetectionNeeded(manual));
+}
+
+BOOST_AUTO_TEST_CASE(automatic_detection_metadata_round_trips_through_xml) {
+  finalize::Params params;
+  params.setColorMode(finalize::ColorMode::Mixed);
+  params.setColorModeDetected(true);
+  params.setAutomaticDetection(true);
+  params.setDetectorSchemaVersion(LeptonicaDetector::DETECTOR_SCHEMA_VERSION);
+  params.setDetectionSensitivity(8);
+
+  QDomDocument document;
+  const finalize::Params restored(params.toXml(document, QStringLiteral("params")));
+  BOOST_CHECK(restored.isAutomaticDetection());
+  BOOST_CHECK(restored.detectorSchemaVersion()
+              == LeptonicaDetector::DETECTOR_SCHEMA_VERSION);
+  BOOST_CHECK(restored.detectionSensitivity() == 8);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

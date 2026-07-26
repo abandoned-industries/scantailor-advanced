@@ -63,6 +63,12 @@ class Params {
 
   bool isColorModeDetected() const { return m_colorModeDetected; }
   void setColorModeDetected(bool detected) { m_colorModeDetected = detected; }
+  bool isAutomaticDetection() const { return m_automaticDetection; }
+  void setAutomaticDetection(bool automatic) { m_automaticDetection = automatic; }
+  int detectorSchemaVersion() const { return m_detectorSchemaVersion; }
+  void setDetectorSchemaVersion(int version) { m_detectorSchemaVersion = version; }
+  int detectionSensitivity() const { return m_detectionSensitivity; }
+  void setDetectionSensitivity(int sensitivity) { m_detectionSensitivity = sensitivity; }
 
   bool isProcessed() const { return m_processed; }
   void setProcessed(bool processed) { m_processed = processed; }
@@ -76,6 +82,9 @@ class Params {
   bool m_colorModeDetected;
   bool m_processed;
   bool m_forceWhiteBalance = false;
+  bool m_automaticDetection = false;
+  int m_detectorSchemaVersion = 0;
+  int m_detectionSensitivity = -1;
 };
 
 class Settings {
@@ -93,6 +102,7 @@ class Settings {
   std::unique_ptr<Params> getParams(const PageId& pageId) const;
 
   void setColorMode(const PageId& pageId, ColorMode mode);
+  void setDetectedColorMode(const PageId& pageId, ColorMode mode);
   ColorMode getColorMode(const PageId& pageId) const;
 
   void setProcessed(const PageId& pageId, bool processed);
@@ -112,8 +122,8 @@ class Settings {
   bool checkEverythingDefined(const PageSequence& pages, const PageId* ignore = nullptr) const;
 
   // Sensitivity adjustment for localized continuous-tone picture evidence.
-  int midtoneThreshold() const { return m_midtoneThreshold; }
-  void setMidtoneThreshold(int threshold) { m_midtoneThreshold = threshold; }
+  int midtoneThreshold() const;
+  void setMidtoneThreshold(int threshold);
 
   // Output settings
   bool preserveOutput() const { return m_preserveOutput; }

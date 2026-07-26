@@ -10,13 +10,17 @@
 using namespace foundation;
 
 namespace deskew {
-Params::Params(const double deskewAngleDeg, const Dependencies& deps, const AutoManualMode mode)
-    : m_deskewAngleDeg(deskewAngleDeg), m_deps(deps), m_mode(mode) {}
+Params::Params(const double deskewAngleDeg,
+               const Dependencies& deps,
+               const AutoManualMode mode,
+               const QString& decisionReason)
+    : m_deskewAngleDeg(deskewAngleDeg), m_deps(deps), m_mode(mode), m_decisionReason(decisionReason) {}
 
 Params::Params(const QDomElement& deskewEl)
     : m_deskewAngleDeg(deskewEl.attribute("angle").toDouble()),
       m_deps(deskewEl.namedItem("dependencies").toElement()),
-      m_mode(deskewEl.attribute("mode") == "manual" ? MODE_MANUAL : MODE_AUTO) {}
+      m_mode(deskewEl.attribute("mode") == "manual" ? MODE_MANUAL : MODE_AUTO),
+      m_decisionReason(deskewEl.attribute("decisionReason")) {}
 
 Params::~Params() = default;
 
@@ -24,6 +28,7 @@ QDomElement Params::toXml(QDomDocument& doc, const QString& name) const {
   QDomElement el(doc.createElement(name));
   el.setAttribute("mode", m_mode == MODE_AUTO ? "auto" : "manual");
   el.setAttribute("angle", Utils::doubleToString(m_deskewAngleDeg));
+  if (!m_decisionReason.isEmpty()) el.setAttribute("decisionReason", m_decisionReason);
   el.appendChild(m_deps.toXml(doc, "dependencies"));
   return el;
 }

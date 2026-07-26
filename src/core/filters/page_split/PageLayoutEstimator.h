@@ -16,6 +16,7 @@ class QRect;
 class QPoint;
 class QImage;
 class QTransform;
+class QString;
 class ImageTransformation;
 class DebugImages;
 class Span;
@@ -50,13 +51,15 @@ class PageLayoutEstimator {
                                        const QImage& input,
                                        const ImageTransformation& preXform,
                                        imageproc::BinaryThreshold bwThreshold,
-                                       DebugImages* dbg = nullptr);
+                                       DebugImages* dbg = nullptr,
+                                       QString* decisionReason = nullptr);
 
  private:
   static std::unique_ptr<PageLayout> tryCutAtFoldingLine(LayoutType layoutType,
                                                          const QImage& input,
                                                          const ImageTransformation& preXform,
-                                                         DebugImages* dbg);
+                                                         DebugImages* dbg,
+                                                         QString* decisionReason);
 
   static PageLayout cutAtWhitespace(LayoutType layoutType,
                                     const QImage& input,
