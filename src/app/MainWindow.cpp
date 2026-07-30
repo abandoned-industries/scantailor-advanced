@@ -4203,12 +4203,15 @@ void MainWindow::toggleFullBleedForSelectedPages() {
 }
 
 void MainWindow::keyPressEvent(QKeyEvent* event) {
-  const bool isPageLayoutFinalizeOrOutput = m_stages
-      && (m_curFilter == m_stages->pageLayoutFilterIdx() || m_curFilter == m_stages->finalizeFilterIdx()
-          || m_curFilter == m_stages->outputFilterIdx());
+  // Full bleed is a page-layout setting that deliberately bypasses margins
+  // and match-size aggregation.  Keep its unmodified "F" shortcut scoped to
+  // the stage where the checkbox and its effect are visible; accepting it in
+  // Finalize / Output made an ordinary key press silently remove standardized
+  // margins from the selected pages.
+  const bool isPageLayout = m_stages && m_curFilter == m_stages->pageLayoutFilterIdx();
   const bool commandModifierPressed
       = event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier);
-  if (isPageLayoutFinalizeOrOutput && !commandModifierPressed && event->text().toLower() == "f") {
+  if (isPageLayout && !commandModifierPressed && event->text().toLower() == "f") {
     toggleFullBleedForSelectedPages();
     event->accept();
     return;

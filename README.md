@@ -2,11 +2,15 @@
 
 <img width="256" height="256" alt="scantailor-spectre" src="https://github.com/user-attachments/assets/a3988c3d-d80e-4089-9418-2bd8302b4b63" />
 
-**Version 2.0a35** | macOS (Apple Silicon) | Requires macOS 15 or later
+**Version 2.0a36** | macOS (Apple Silicon) | Requires macOS 15 or later
 
 ScanTailor Spectre transforms raw scans into clean, publication-ready pages. Import a PDF or folder of images, process through a 10-stage workflow, and export a polished, searchable PDF.
 
 ScanTailor Spectre is not intended for copyrighted works, but rather for works that you have the rights to or are in the public domain.
+
+## Version 2.0a36
+
+- Hotfix: pressing F outside the Margins stage silently switched selected pages to Full Bleed (skipping margin standardization in output) — present since 2.0a32. The shortcut now works only in Margins, where the checkbox is visible. Affected saved projects: select the pages in Margins and uncheck "Full bleed page" to restore uniform margins.
 
 ## Version 2.0a35
 

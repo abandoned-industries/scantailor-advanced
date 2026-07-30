@@ -6,6 +6,7 @@ set(sources
     TestContentSpanFinder.cpp
     TestDurationFormatter.cpp
     TestOcrResult.cpp
+    TestPageLayoutOutput.cpp
     TestPdfExporter.cpp
     TestPdfReader.cpp
     TestPictureRegionMask.cpp
@@ -20,6 +21,9 @@ target_link_libraries(
     core_tests
     PRIVATE core Boost::unit_test_framework
     Boost::prg_exec_monitor ${EXTRA_LIBS})
+target_include_directories(
+    core_tests
+    PRIVATE "${CMAKE_SOURCE_DIR}/src/dewarping")
 
 add_test(NAME core_tests COMMAND core_tests --log_level=message)
 
@@ -38,4 +42,12 @@ target_link_libraries(
     PRIVATE core output ${EXTRA_LIBS})
 target_include_directories(
     mixed_output_diagnostic
+    PRIVATE "${CMAKE_SOURCE_DIR}/src/dewarping")
+
+add_executable(margins_output_diagnostic MarginsOutputDiagnostic.cpp)
+target_link_libraries(
+    margins_output_diagnostic
+    PRIVATE core page_layout output ${EXTRA_LIBS})
+target_include_directories(
+    margins_output_diagnostic
     PRIVATE "${CMAKE_SOURCE_DIR}/src/dewarping")
