@@ -299,9 +299,14 @@ add_custom_target(generate_version_h ALL
         -P "${PROJECT_SOURCE_DIR}/cmake/GenerateVersionH.cmake"
     COMMENT "Generating version.h with build timestamp"
 )
-string(REGEX REPLACE "([0-9]+)\\.[0-9]+\\.[0-9]+" "\\1" APPLICATION_VERSION_MAJOR "${VERSION}")
-string(REGEX REPLACE "[0-9]+\\.([0-9]+)\\.[0-9]+" "\\1" APPLICATION_VERSION_MINOR "${VERSION}")
-string(REGEX REPLACE "[0-9]+\\.[0-9]+\\.([0-9]+)" "\\1" APPLICATION_VERSION_PATCH "${VERSION}")
+if (VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)$"
+    OR VERSION MATCHES "^([0-9]+)\\.([0-9]+)[A-Za-z]+([0-9]+)$")
+  set(APPLICATION_VERSION_MAJOR "${CMAKE_MATCH_1}")
+  set(APPLICATION_VERSION_MINOR "${CMAKE_MATCH_2}")
+  set(APPLICATION_VERSION_PATCH "${CMAKE_MATCH_3}")
+else()
+  message(FATAL_ERROR "Unsupported application version format: ${VERSION}")
+endif()
 
 set(SCANTAILOR_RESOURCES_DIR "${CMAKE_SOURCE_DIR}/src/resources")
 set(SCANTAILOR_TRANSLATIONS_DIR "${CMAKE_SOURCE_DIR}/src/translations")

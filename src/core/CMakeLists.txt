@@ -55,6 +55,7 @@ set(common_sources
     BookMetadata.cpp BookMetadata.h
     BookLookup.cpp BookLookup.h
     ZoteroClient.cpp ZoteroClient.h
+    ZoteroLoopSidecar.cpp ZoteroLoopSidecar.h
     PngMetadataLoader.cpp PngMetadataLoader.h
     TiffMetadataLoader.cpp TiffMetadataLoader.h
     JpegMetadataLoader.cpp JpegMetadataLoader.h

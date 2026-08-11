@@ -166,6 +166,10 @@ class OutputGenerator::Processor {
                                       const QRect& targetRect,
                                       GrayImage* background = nullptr) const;
 
+  GrayImage normalizeWorkingIlluminationGray(const QPolygonF& areaToConsider,
+                                             const QTransform& xform,
+                                             const QRect& targetRect) const;
+
   GrayImage detectPictures(const GrayImage& input300dpi) const;
 
   BinaryImage estimateBinarizationMask(const GrayImage& graySource,
@@ -1656,8 +1660,8 @@ std::unique_ptr<OutputImage> OutputGenerator::Processor::processWithDewarping(Zo
     warpedGrayOutput = transformToGray(m_inputGrayImage, m_xform.transform(), m_workingBoundingRect,
                                        OutsidePixels::assumeWeakColor(m_outsideBackgroundColor));
   } else {
-    warpedGrayOutput = normalizeIlluminationGray(m_inputGrayImage, m_preCropAreaInOriginalCs, m_xform.transform(),
-                                                 m_workingBoundingRect);
+    warpedGrayOutput = normalizeWorkingIlluminationGray(m_preCropAreaInOriginalCs, m_xform.transform(),
+                                                        m_workingBoundingRect);
   }
 
   // Original image, but:
@@ -2016,6 +2020,7 @@ GrayImage OutputGenerator::Processor::normalizeIlluminationGray(const QImage& in
   int saturationThreshold = colorOpts.paperSaturationThreshold();
   const double coverageThreshold = colorOpts.paperCoverageThreshold();
   const bool useAdaptive = colorOpts.useAdaptiveDetection();
+  QRect embeddedPaperRect;
 
   // Build a mask of likely-background (paper-like) pixels to avoid using photo regions.
   QImage colorInput = transform(input, xform, targetRect, OutsidePixels::assumeWeakNearest());
@@ -2035,14 +2040,27 @@ GrayImage OutputGenerator::Processor::normalizeIlluminationGray(const QImage& in
       const int sampleDepth = std::min(20, std::min(w, h) / 10);  // Sample 20 pixels deep or 10% of image
       std::vector<int> marginBrightness;
       std::vector<int> marginSaturation;
+      std::vector<int> interiorBrightness;
+      std::vector<int> interiorSaturation;
       marginBrightness.reserve(2 * (w + h) * sampleDepth);
       marginSaturation.reserve(2 * (w + h) * sampleDepth);
+      const int interiorStep = std::max(1, std::min(w, h) / 200);
+      interiorBrightness.reserve((w / interiorStep) * (h / interiorStep));
+      interiorSaturation.reserve((w / interiorStep) * (h / interiorStep));
 
       for (int y = 0; y < h; ++y) {
         const QRgb* line = reinterpret_cast<const QRgb*>(sampleImage.constScanLine(y));
         for (int x = 0; x < w; ++x) {
           // Only sample from margins
           if (x >= sampleDepth && x < w - sampleDepth && y >= sampleDepth && y < h - sampleDepth) {
+            if ((x % interiorStep) == 0 && (y % interiorStep) == 0) {
+              const QRgb p = line[x];
+              const int r = qRed(p);
+              const int g = qGreen(p);
+              const int b = qBlue(p);
+              interiorBrightness.push_back((r + g + b) / 3);
+              interiorSaturation.push_back(std::max({r, g, b}) - std::min({r, g, b}));
+            }
             continue;
           }
           const QRgb p = line[x];
@@ -2067,6 +2085,56 @@ GrayImage OutputGenerator::Processor::normalizeIlluminationGray(const QImage& in
         // Allow 40 units below detected brightness and 30 units above detected saturation
         brightnessThreshold = std::max(50, medianBrightness - 40);
         saturationThreshold = std::max(30, medianSaturation + 30);
+
+        // A PDF may place a low-chroma scanned leaf inside a pure-white matte.
+        // In that case the edge median describes the matte rather than paper,
+        // and a margin-only threshold excludes the leaf from the illumination
+        // model. A broad interior median distinguishes beige or gray paper
+        // from a legitimately dark, saturated cover.
+        if (!interiorBrightness.empty()) {
+          std::sort(interiorBrightness.begin(), interiorBrightness.end());
+          std::sort(interiorSaturation.begin(), interiorSaturation.end());
+          const int medianInteriorBrightness = interiorBrightness[interiorBrightness.size() / 2];
+          const int medianInteriorSaturation = interiorSaturation[interiorSaturation.size() / 2];
+          if (medianBrightness >= 230 && medianInteriorBrightness >= 80
+              && medianBrightness - medianInteriorBrightness >= 25
+              && medianInteriorSaturation <= saturationThreshold) {
+            brightnessThreshold = std::max(50, medianInteriorBrightness - 40);
+            saturationThreshold = std::max(saturationThreshold, medianInteriorSaturation + 30);
+
+            const int matteLeafBoundary = (medianBrightness + medianInteriorBrightness) / 2;
+            int left = w;
+            int top = h;
+            int right = -1;
+            int bottom = -1;
+            for (int y = 0; y < h; ++y) {
+              const QRgb* line = reinterpret_cast<const QRgb*>(sampleImage.constScanLine(y));
+              for (int x = 0; x < w; ++x) {
+                const QRgb p = line[x];
+                const int maxC = std::max({qRed(p), qGreen(p), qBlue(p)});
+                const int minC = std::min({qRed(p), qGreen(p), qBlue(p)});
+                const int brightness = (qRed(p) + qGreen(p) + qBlue(p)) / 3;
+                if (brightness < matteLeafBoundary && maxC - minC <= saturationThreshold) {
+                  left = std::min(left, x);
+                  top = std::min(top, y);
+                  right = std::max(right, x);
+                  bottom = std::max(bottom, y);
+                }
+              }
+            }
+            if (right >= left && bottom >= top) {
+              const QRect candidate(QPoint(left, top), QPoint(right, bottom));
+              const double areaShare = candidate.width() * static_cast<double>(candidate.height())
+                                       / static_cast<double>(w) / static_cast<double>(h);
+              if (areaShare >= 0.30 && areaShare <= 0.95) {
+                embeddedPaperRect = candidate;
+              }
+            }
+            qDebug() << "normalizeIlluminationGray: using low-chroma interior paper median brightness="
+                     << medianInteriorBrightness << "saturation=" << medianInteriorSaturation
+                     << "rect=" << embeddedPaperRect;
+          }
+        }
 
         qDebug() << "normalizeIlluminationGray: adaptive detection - margin brightness=" << medianBrightness
                  << "saturation=" << medianSaturation
@@ -2117,6 +2185,33 @@ GrayImage OutputGenerator::Processor::normalizeIlluminationGray(const QImage& in
   }
 
   m_status.throwIfCancelled();
+
+  // Estimate an embedded scan independently of its white PDF matte. A single
+  // polynomial over both regions follows the discontinuity poorly and leaves
+  // a low-contrast beige verso dark enough for Otsu to select the entire leaf.
+  if (!embeddedPaperRect.isEmpty()) {
+    GrayImage embedded(toBeNormalized.toQImage().copy(embeddedPaperRect));
+    try {
+      const PolynomialSurface embeddedBackground(
+          estimateBackground(embedded, QPolygonF(QRectF(embedded.rect())), m_status, m_dbg));
+      GrayImage embeddedBg(embeddedBackground.render(embedded.size()));
+      grayRasterOp<RaiseAboveBackground>(embeddedBg, embedded);
+      for (int y = 0; y < embeddedPaperRect.height(); ++y) {
+        std::copy_n(embeddedBg.data() + y * embeddedBg.stride(), embeddedPaperRect.width(),
+                    toBeNormalized.data() + (embeddedPaperRect.y() + y) * toBeNormalized.stride()
+                        + embeddedPaperRect.x());
+      }
+      if (m_dbg) {
+        m_dbg->add(toBeNormalized, "normalized_embedded_paper");
+      }
+      if (background) {
+        *background = toBeNormalized;
+      }
+      return toBeNormalized;
+    } catch (const std::exception& e) {
+      qWarning() << "normalizeIlluminationGray: embedded paper estimate failed, using full image:" << e.what();
+    }
+  }
 
   QPolygonF transformedConsiderationArea = xform.map(areaToConsider);
   transformedConsiderationArea.translate(-targetRect.topLeft());
@@ -2172,6 +2267,23 @@ GrayImage OutputGenerator::Processor::normalizeIlluminationGray(const QImage& in
   }
   m_status.throwIfCancelled();
   return bgImg;
+}
+
+GrayImage OutputGenerator::Processor::normalizeWorkingIlluminationGray(const QPolygonF& areaToConsider,
+                                                                        const QTransform& xform,
+                                                                        const QRect& targetRect) const {
+  if (m_blackOnWhite) {
+    return normalizeIlluminationGray(m_inputGrayImage, areaToConsider, xform, targetRect);
+  }
+
+  // Illumination normalization's paper model expects the physical source
+  // background, not Output's inverted working polarity. Sampling the latter
+  // can mistake a white PDF matte for near-black paper and flatten the scanned
+  // leaf before thresholding. Normalize first, then restore working polarity.
+  const GrayImage sourcePolarity(m_inputGrayImage.inverted());
+  GrayImage normalized(normalizeIlluminationGray(sourcePolarity, areaToConsider, xform, targetRect));
+  normalized.invert();
+  return normalized;
 }
 
 BinaryImage OutputGenerator::Processor::estimateBinarizationMask(const GrayImage& graySource,
@@ -2727,9 +2839,68 @@ BinaryImage OutputGenerator::Processor::binarize(const QImage& image) const {
 }
 
 BinaryImage OutputGenerator::Processor::binarize(const QImage& image, const BinaryImage& mask) const {
-  BinaryImage binarized = binarize(image);
+  BinaryImage binarized;
+  if (m_colorParams.blackWhiteOptions().getBinarizationMethod() == T_OTSU) {
+    const GrayscaleHistogram hist(image, mask);
+    const BinaryThreshold otsuThreshold(BinaryThreshold::otsuThreshold(hist));
+    binarized = BinaryImage(image, adjustThreshold(otsuThreshold));
+    rasterOp<RopAnd<RopSrc, RopDst>>(binarized, mask);
 
-  rasterOp<RopAnd<RopSrc, RopDst>>(binarized, mask);
+    const auto selectedPixels = mask.countBlackPixels();
+    if (selectedPixels != 0) {
+      const auto thresholdedBlackPixels = binarized.countBlackPixels();
+      const double finalBlackShare
+          = m_blackOnWhite
+                ? thresholdedBlackPixels / static_cast<double>(selectedPixels)
+                : (selectedPixels - thresholdedBlackPixels) / static_cast<double>(selectedPixels);
+
+      // A white PDF canvas around a darker scanned leaf can become Otsu's
+      // brightest class.  The first split then paints the whole leaf black.
+      // If that happens, rerun Otsu within the leaf-side class.  Work in the
+      // current processing polarity: dark-on-light keeps the lower class,
+      // while light-on-dark keeps the upper class because Output inverts it
+      // again after binarization.
+      constexpr double dominantFinalBlackShare = 0.65;
+      if (finalBlackShare > dominantFinalBlackShare) {
+        GrayscaleHistogram refinedHist(hist);
+        const int classBoundary = static_cast<int>(otsuThreshold);
+        qint64 retainedPixels = 0;
+        int occupiedBins = 0;
+        for (int value = 0; value < 256; ++value) {
+          const bool retain = m_blackOnWhite ? value < classBoundary : value >= classBoundary;
+          if (!retain) {
+            refinedHist[value] = 0;
+          } else if (refinedHist[value] != 0) {
+            retainedPixels += refinedHist[value];
+            ++occupiedBins;
+          }
+        }
+
+        // Avoid asking Otsu to split an empty or effectively constant class.
+        if (retainedPixels >= 64 && occupiedBins >= 2) {
+          const BinaryThreshold refinedThreshold(
+              adjustThreshold(BinaryThreshold::otsuThreshold(refinedHist)));
+          BinaryImage refined(image, refinedThreshold);
+          rasterOp<RopAnd<RopSrc, RopDst>>(refined, mask);
+          const auto refinedBlackPixels = refined.countBlackPixels();
+          const double refinedFinalBlackShare
+              = m_blackOnWhite
+                    ? refinedBlackPixels / static_cast<double>(selectedPixels)
+                    : (selectedPixels - refinedBlackPixels) / static_cast<double>(selectedPixels);
+
+          constexpr double plausibleFinalBlackShare = 0.35;
+          constexpr double minimumShareReduction = 0.20;
+          if (refinedFinalBlackShare <= plausibleFinalBlackShare
+              && refinedFinalBlackShare + minimumShareReduction < finalBlackShare) {
+            binarized.swap(refined);
+          }
+        }
+      }
+    }
+  } else {
+    binarized = binarize(image);
+    rasterOp<RopAnd<RopSrc, RopDst>>(binarized, mask);
+  }
   return binarized;
 }
 
@@ -2907,8 +3078,8 @@ ForegroundType OutputGenerator::Processor::getForegroundType() const {
 QImage OutputGenerator::Processor::transformToWorkingCs(bool normalize) const {
   QImage dst;
   if (normalize) {
-    dst = normalizeIlluminationGray(m_inputGrayImage, m_preCropAreaInOriginalCs, m_xform.transform(),
-                                    m_workingBoundingRect);
+    dst = normalizeWorkingIlluminationGray(m_preCropAreaInOriginalCs, m_xform.transform(),
+                                           m_workingBoundingRect);
     if (m_colorOriginal) {
       assert(dst.format() == QImage::Format_Indexed8);
       QImage colorImg = transform(m_inputOrigImage, m_xform.transform(), m_workingBoundingRect,

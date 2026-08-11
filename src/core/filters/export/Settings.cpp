@@ -65,9 +65,22 @@ bool Settings::sendToZotero() const {
   return m_sendToZotero;
 }
 
-void Settings::setSendToZotero(bool value) {
+bool Settings::hasExplicitSendToZoteroChoice() const {
+  QMutexLocker locker(&m_mutex);
+  return m_hasExplicitSendToZoteroChoice;
+}
+
+void Settings::setSendToZotero(bool value, bool explicitChoice) {
   QMutexLocker locker(&m_mutex);
   m_sendToZotero = value;
+  m_hasExplicitSendToZoteroChoice = explicitChoice;
+}
+
+void Settings::armSendToZoteroForLoopProject() {
+  QMutexLocker locker(&m_mutex);
+  if (!m_hasExplicitSendToZoteroChoice) {
+    m_sendToZotero = true;
+  }
 }
 
 }  // namespace export_

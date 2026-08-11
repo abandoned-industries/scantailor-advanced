@@ -30,6 +30,8 @@ namespace output {
  */
 class OutputImageParams {
  public:
+  static constexpr int CURRENT_RENDER_VERSION = 2;
+
   OutputImageParams(const QSize& outImageSize,
                     const QRect& contentRect,
                     ImageTransformation xform,
@@ -105,6 +107,9 @@ class OutputImageParams {
 
   /** Pixel size of the output image. */
   QSize m_size;
+
+  /** Bumped whenever Output rendering changes require cached files to be regenerated. */
+  int m_renderVersion;
 
   /** Content rectangle in output image coordinates. */
   QRect m_contentRect;

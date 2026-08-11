@@ -29,6 +29,7 @@ OutputImageParams::OutputImageParams(const QSize& outImageSize,
                                      bool forceWhiteBalance,
                                      const QColor& manualWhiteBalanceColor)
     : m_size(outImageSize),
+      m_renderVersion(CURRENT_RENDER_VERSION),
       m_contentRect(contentRect),
       m_cropArea(xform.resultingPreCropArea()),
       m_dpi(dpi),
@@ -50,6 +51,7 @@ OutputImageParams::OutputImageParams(const QSize& outImageSize,
 
 OutputImageParams::OutputImageParams(const QDomElement& el)
     : m_size(XmlUnmarshaller::size(el.namedItem("size").toElement())),
+      m_renderVersion(el.attribute("renderVersion", "0").toInt()),
       m_contentRect(XmlUnmarshaller::rect(el.namedItem("content-rect").toElement())),
       m_cropArea(XmlUnmarshaller::polygonF(el.namedItem("crop-area").toElement())),
       m_partialXform(el.namedItem("partial-xform").toElement()),
@@ -70,6 +72,7 @@ QDomElement OutputImageParams::toXml(QDomDocument& doc, const QString& name) con
   XmlMarshaller marshaller(doc);
 
   QDomElement el(doc.createElement(name));
+  el.setAttribute("renderVersion", m_renderVersion);
   el.appendChild(marshaller.size(m_size, "size"));
   el.appendChild(marshaller.rect(m_contentRect, "content-rect"));
   el.appendChild(marshaller.polygonF(m_cropArea, "crop-area"));
@@ -92,6 +95,10 @@ QDomElement OutputImageParams::toXml(QDomDocument& doc, const QString& name) con
 }
 
 bool OutputImageParams::matches(const OutputImageParams& other) const {
+  if (m_renderVersion != other.m_renderVersion) {
+    return false;
+  }
+
   if (m_size != other.m_size) {
     return false;
   }

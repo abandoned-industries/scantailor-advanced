@@ -1,9 +1,11 @@
 #include <boost/test/unit_test.hpp>
 #include <QDomDocument>
+#include <QFile>
 
 #include "ImageId.h"
 #include "PageId.h"
 #include "filters/finalize/Settings.h"
+#include "filters/finalize/ThumbnailColorModeFilter.h"
 #include "filters/output/ColorParams.h"
 #include "LeptonicaDetector.h"
 
@@ -38,6 +40,73 @@ BOOST_AUTO_TEST_CASE(best_guess_preserves_mixed_verdict) {
   using finalize::ColorMode;
   BOOST_CHECK(applyAutoColorModePolicy(ColorMode::Mixed, AutoColorModePolicy::BestGuess)
               == ColorMode::Mixed);
+}
+
+BOOST_AUTO_TEST_CASE(thumbnail_color_mode_filter_keeps_mixed_independent) {
+  using finalize::ColorMode;
+  using finalize::ThumbnailColorModeFilter;
+
+  const ThumbnailColorModeFilter mixedOnly(false, false, true, false);
+  BOOST_CHECK(!mixedOnly.includes(ColorMode::BlackAndWhite));
+  BOOST_CHECK(!mixedOnly.includes(ColorMode::Grayscale));
+  BOOST_CHECK(mixedOnly.includes(ColorMode::Mixed));
+  BOOST_CHECK(!mixedOnly.includes(ColorMode::Color));
+  BOOST_CHECK(!mixedOnly.includesAll());
+
+  const ThumbnailColorModeFilter colorOnly(false, false, false, true);
+  BOOST_CHECK(!colorOnly.includes(ColorMode::Mixed));
+  BOOST_CHECK(colorOnly.includes(ColorMode::Color));
+
+  const ThumbnailColorModeFilter allModes(true, true, true, true);
+  BOOST_CHECK(allModes.includesAll());
+}
+
+BOOST_AUTO_TEST_CASE(main_window_exposes_checked_mixed_thumbnail_filter) {
+  QFile file(QStringLiteral(SCANTAILOR_TEST_SOURCE_DIR "/src/app/MainWindow.ui"));
+  BOOST_REQUIRE(file.open(QIODevice::ReadOnly));
+
+  QDomDocument document;
+  BOOST_REQUIRE(document.setContent(&file));
+  const QDomNodeList widgets = document.elementsByTagName(QStringLiteral("widget"));
+  QDomElement mixedButton;
+  int bwIndex = -1;
+  int grayIndex = -1;
+  int mixedIndex = -1;
+  int colorIndex = -1;
+  for (int i = 0; i < widgets.size(); ++i) {
+    const QDomElement widget = widgets.at(i).toElement();
+    const QString name = widget.attribute(QStringLiteral("name"));
+    if (name == QStringLiteral("filterBwBtn")) {
+      bwIndex = i;
+    } else if (name == QStringLiteral("filterGrayBtn")) {
+      grayIndex = i;
+    } else if (name == QStringLiteral("filterMixedBtn")) {
+      mixedButton = widget;
+      mixedIndex = i;
+    } else if (name == QStringLiteral("filterColorBtn")) {
+      colorIndex = i;
+    }
+  }
+  BOOST_REQUIRE(!mixedButton.isNull());
+  BOOST_CHECK(bwIndex < grayIndex);
+  BOOST_CHECK(grayIndex < mixedIndex);
+  BOOST_CHECK(mixedIndex < colorIndex);
+
+  auto propertyText = [&mixedButton](const QString& name) {
+    for (QDomElement property = mixedButton.firstChildElement(QStringLiteral("property"));
+         !property.isNull(); property = property.nextSiblingElement(QStringLiteral("property"))) {
+      if (property.attribute(QStringLiteral("name")) == name) {
+        return property.firstChildElement().text();
+      }
+    }
+    return QString();
+  };
+
+  BOOST_CHECK(propertyText(QStringLiteral("text")) == QStringLiteral("M"));
+  BOOST_CHECK(propertyText(QStringLiteral("toolTip"))
+              == QStringLiteral("Show/hide Mixed pages in thumbnails"));
+  BOOST_CHECK(propertyText(QStringLiteral("checkable")) == QStringLiteral("true"));
+  BOOST_CHECK(propertyText(QStringLiteral("checked")) == QStringLiteral("true"));
 }
 
 BOOST_AUTO_TEST_CASE(finalize_mixed_mode_round_trips_through_xml) {

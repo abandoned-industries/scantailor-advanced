@@ -2,138 +2,11 @@
 
 <img width="256" height="256" alt="scantailor-spectre" src="https://github.com/user-attachments/assets/a3988c3d-d80e-4089-9418-2bd8302b4b63" />
 
-**Version 2.0a36** | macOS (Apple Silicon) | Requires macOS 15 or later
+**Version 2.0b1** | macOS (Apple Silicon) | Requires macOS 15 or later
 
 ScanTailor Spectre transforms raw scans into clean, publication-ready pages. Import a PDF or folder of images, process through a 10-stage workflow, and export a polished, searchable PDF.
 
 ScanTailor Spectre is not intended for copyrighted works, but rather for works that you have the rights to or are in the public domain.
-
-## Version 2.0a36
-
-- Hotfix: pressing F outside the Margins stage silently switched selected pages to Full Bleed (skipping margin standardization in output) — present since 2.0a32. The shortcut now works only in Margins, where the checkbox is visible. Affected saved projects: select the pages in Margins and uncheck "Full bleed page" to restore uniform margins.
-
-## Version 2.0a35
-
-- The pipeline is now photograph-aware. Validated page-by-page against a 268-page photography monograph alongside the existing text-book corpus.
-- Color detection rebuilt on spatial evidence: full-page photographic plates lost to B&W binarization dropped from 139/185 to 4/185; all 19 mixed text+photo pages now correctly preserve their photographs; text-page classification remains exact.
-- Geometry stages no longer treat photographs as documents: photo pages are not split, not rotated by scene edges, and keep full-page content. Near-square single leaves never auto-split without physical gutter evidence — two-column layouts no longer masquerade as spreads. Every automatic decision records its reason in the project file.
-- Mixed-mode output finds each photograph's printed frame and fills it to exact edges; bright regions inside photos (faces, skies) are no longer bleached to paper.
-- Detection results are versioned: improved future detectors automatically re-judge stale automatic decisions while manual choices stay authoritative.
-
-## Version 2.0a34 — The Second Speed Build
-
-**Released July 24, 2026.** Version 2.0a34 is the second major performance
-release for modern Apple Silicon Macs. On the same 392-page scanned-book
-workflow, observed end-to-end times progressed from **6 m 38 s in v2.0a19** to
-**3 m 28 s in v2.0a33**, then to the following choices in v2.0a34:
-
-| OCR setting | 392-page time | Intended use |
-|---|---:|---|
-| Accurate OCR + language correction | **2 m 48 s** | Highest measured text quality |
-| Accurate OCR + skip language correction | **1 m 30 s** | Best speed/quality balance |
-| Fast OCR + skip language correction | **29.5 s** | Maximum throughput; largest OCR accuracy tradeoff |
-
-These are measured runs on the reference book, not a promise that every book
-or Mac will finish in exactly the same time. Fast OCR is substantially less
-accurate than Accurate OCR; use the 1 m 30 s setting when searchable-text
-quality still matters.
-
-- Auto Process now keeps decoded PDF pages in a RAM-aware cache and coalesces
-  concurrent requests for the same page, avoiding repeated rasterization. It
-  also combines compatible pipeline stages and carries Output's newly
-  processed in-memory image directly into OCR instead of saving and reloading
-  it or running Output twice.
-- Mixed mode is now conservatively autodetected from the existing Finalize
-  color analysis. It finds localized continuous-tone pictures on otherwise
-  document-like pages without adding another full-image detection pass, and
-  the choice is preserved correctly through Finalize and Output.
-- The OCR stage and Auto Process dialog now expose the same three remembered
-  controls: **Fast OCR**, **Multilingual detection**, and **Skip language
-  correction**.
-- The language choices are now honest about their cost. **System language**
-  is the fast default; **Multilingual detection** enables true automatic
-  language detection and is deliberately labeled slower. A selected primary
-  language is used only when multilingual detection is off.
-- OCR result caching now includes the recognition mode, language-correction
-  choice, engine schema, and output-file identity, so changing OCR settings or
-  regenerating a page cannot silently reuse stale text.
-- Fixed unbounded Apple Vision object lifetime growth during long OCR runs and
-  retained stable page-parallel Vision OCR as the default.
-- macOS 26's new document-recognition engine was investigated using only
-  Weasel's newly processed in-memory page images. It can be faster on short
-  runs, but concurrent requests crashed inside Apple's framework during
-  full-book stress tests, while the stable serialized form was slower than the
-  normal engine. It therefore remains research-only and opt-in through
-  `SCANTAILOR_DOCUMENT_VISION_OCR=1`; it never reads or reuses text from the
-  original PDF.
-- Added performance instrumentation and regression coverage for image-cache
-  behavior, OCR cache validity, color/Mixed classification, PDF loading, and
-  long-run stability. The release keeps the crash-prone document-OCR
-  concurrency path disabled.
-
-## Version 2.0a33 — The First Speed Build
-
-**Measured speedup:** a 392-page scanned book ([*The Best Short Stories of 1924*, Internet Archive](https://archive.org/details/bestshortstories1924unse)) auto-processes end-to-end — including accurate-mode OCR — in **3 m 28 s (0.53 s/page)**, versus 6 m 38 s on v2.0a19: about **1.9× faster overall, and 5–6× faster in the processing pipeline itself** (OCR time is Apple Vision's and unchanged). Color classification on the same book improved from 340 pages wrongly detected as Color to 388 correct B&W pages, with only the covers (grayscale) and the bookplate/library card (color) treated specially.
-
-- Major performance overhaul: parallel PDF rasterization, decoded-image cache, coalesced thumbnail updates, batch queue refill before UI work, gated per-page parallelism.
-- OCR receives the rendered output image in memory; PDF export moved off the GUI thread with cancellation and atomic file replacement.
-- New unified "Auto Process…" dialog: color handling preset (Force B&W / B&W + grayscale / Best guess), OCR on/off, remembered settings.
-- Auto-process runs report elapsed time and per-stage breakdown.
-- Fixed three long-standing silent image-pipeline bugs: gray morphology min/max was inverted in the accelerated (vImage/Metal) paths since December, distorting Mixed-mode picture detection and page-split line finding; grayscale downscaling used a resampler that strayed up to 66 gray levels from the intended area average; and morphological reconstruction (seed fill) could stop propagating early, subtly affecting picture detection and background estimation.
-- Added acceleration parity tests so GPU/SIMD paths can no longer silently diverge from the reference implementation; test suites are now fully green.
-- Finalize no longer silently misclassifies aged/toned paper as Color when margin sampling fails.
-
-## Version 2.0a32
-
-- PDF export now opens in the source document's folder with a safe `<source>_processed.pdf` fallback name.
-- Saving a new project now carries already-generated pages and thumbnails from temporary storage into the project's `output` folder.
-
-## Version 2.0a31
-
-- Export now includes book metadata fields, recommended PDF filenames, ISBN lookup, and optional send-to-Zotero support for the locally running Zotero app.
-- After exporting a PDF, the success dialog now has a **Reveal in Finder** button so you can jump straight to the file you just saved.
-- Margins now supports full-bleed pages with the `F` shortcut; full-bleed pages ignore content boxes and match-size aggregation.
-- The Margins stage now has one **Apply To** flow for page layout instead of separate competing margin/alignment buttons.
-- The macOS startup view no longer falls back to the oversized legacy gray project panel.
-- Output uses the native controls again to avoid QtWebEngine/macOS accessibility crashes.
-
-## Version 2.0a30
-
-- Output photo adjustments now show a single, unified panel for Color and Grayscale pages. No more duplicated panels, and no empty gap between the sliders and Dewarping.
-- Sliders feel smoother during drag: the app no longer stutters while you fine-tune adjustments.
-- Exposure, Contrast, Highlights/Shadows, and Whites/Blacks now apply in the same order Lightroom uses, so results match what you'd expect from other photo tools.
-- Stage 2 (Split Pages): opening older projects no longer re-runs detection on every page.
-- Stage 2 (Split Pages): art books with broad, dark binding gutters are detected more reliably.
-- Stage 4 (Page Box): applying a page box across pages of different sizes or rotations now stays centered instead of drifting off the page.
-- Dark-theme slider handles now render cleanly (previously slightly clipped).
-- Stability and packaging improvements: the app bundle is more self-contained and safer to close during the Output stage.
-
-## Version 2.0a29
-
-- Output photo-adjustment sliders are now responsive: thumbnails redraw once after a 300 ms pause instead of on every drag tick.
-- Clicking anywhere on a slider track now jumps the handle to that position (Lightroom-style), in addition to the existing drag behaviour.
-- Numeric value boxes next to each slider are now compact and no longer expand to fill the column.
-- Removes a stale snap-to-zero behaviour that interrupted slider drags mid-stroke.
-
-## Version 2.0a28
-
-- Adds photo adjustment controls in Output, including exposure, contrast, highlights, shadows, whites, blacks, temperature, and tint.
-- Fixes photo adjustments so they apply properly to multiple selected pages and refresh the thumbnails afterward.
-- Fixes Output so B&W and grayscale pages show the right controls instead of the full color adjustment panel.
-- Sets the minimum supported macOS version to 15.
-
-## Features
-- **Auto Mode** - One-button processing through all stages with smart defaults: majority-vote page splitting, zero deskew, content outlier detection, and size outlier handling
-- **Apple Silicon Native** -  Gatekeeper-friendly application
-- **PDF Import** - Open PDFs directly, no need to extract pages first
-- **Batch Processing Summaries** - Dialogs after stages 2, 4, 5 to catch problems and jump to pages needing attention
-- **Detection Settings** - Adjustable Fill Factor and Border Tolerance for art books and photo-heavy content
-- **Finalize Stage** - New stage for color mode selection and output format
-- **Intelligent Color Detection** - Auto-detects B&W vs grayscale vs color pages, including embedded photographs
-- **Photo Adjustments** - Temp, Tint, Exposure, Contrast, Highlights, Shadows, Whites, Blacks sliders with Auto and Reset
-- **Packaged Web Output Panel** - Output stage web controls now ship with the required Qt WebEngine helper dependencies in the app bundle
-- **OCR Stage** - Automatic text recognition for searchable PDFs
-- **Export Stage** - New dedicated PDF export with quality presets
 
 ---
 
@@ -193,7 +66,7 @@ Although ScanTailor Spectre is designed to be as automated as possible, it can m
 
 After you run a stage, the parameters that stage set are stored in your project on a per-page basis. Let's say you set a page to color once. If you rerun the automatic color detection, it will not alter that setting even if it thinks it is grayscale.
 
-This is pre-beta software. Save your project frequently.  
+This is beta software. Save your project frequently.
 
 Before a new project is saved, generated page images and thumbnails are kept in macOS temporary storage. **Save Project** creates a self-contained project folder and moves a permanent copy into its `output` subfolder; closing an unsaved project may remove the temporary copy. The final PDF is created only when you use **Export to PDF**.
 
@@ -254,7 +127,7 @@ Straightens pages that were slightly tilted during scanning. Even 1-2° of tilt 
 
 **Tip:** Sort by "decreasing deviation" to review the most-skewed pages first. The sort order is located at the bottom of the thumbnail panel on the right.
 
-**Thumbnail Filters:** The B, G, C buttons at the bottom of the thumbnail panel filter pages by color mode (B&W, Grayscale, Color). Click to show only pages of that type—useful for reviewing all color pages at once or focusing on B&W pages that need adjustment.
+**Thumbnail Filters:** The B, G, M, C buttons at the bottom of the thumbnail panel filter pages by color mode (B&W, Grayscale, Mixed, Color). Mixed is independent, so you can review pages that combine text and photographs without also showing every color page. Click a button to show only pages of that type.
 
 ### Stage 4: Page Box
 
@@ -464,6 +337,7 @@ If your scan is lower quality or to be read on screen only, you may find that lo
 | `B` | Set selected page(s) to Black & White mode |
 | `Shift+C` | Toggle Color page filter |
 | `Shift+G` | Toggle Grayscale page filter |
+| `Shift+M` | Toggle Mixed page filter |
 | `Shift+B` | Toggle B&W page filter |
 
 **Output (8) Stage Only:**
@@ -499,12 +373,53 @@ If your scan is lower quality or to be read on screen only, you may find that lo
 
 **Save Project** creates a self-contained folder containing:
 
-- The `.ScanTailor` project file
+- The visible `<project-folder>.ScanTailor` project file
 - Copies of the source images in `originals`
 - Generated page images and thumbnails in `output`
 - All settings and processing state
 
 The exported PDF is separate. Create it from Stage 10 with **Export to PDF**.
+
+## Zotero Integration
+
+ScanTailor Spectre can round-trip a scan with Zotero: pick a PDF in your Zotero library, clean it up in ScanTailor Spectre, and the exported PDF returns to the same Zotero item as a new attachment. The original Zotero-managed file is never modified.
+
+### Installing the Zotero Plugin
+
+The round trip is driven by **ScanTailor Spectre Loop**, a small companion plugin for Zotero. The plugin ships inside ScanTailor Spectre, so it remains available after you move the app to Applications and eject the disk image. Choose **Help → Install Zotero Plugin…** in ScanTailor Spectre to reveal `st-spectre-loop.xpi` in Finder. A second copy is also included next to the app on the disk image.
+
+To install it:
+
+- In Zotero, open **Tools → Plugins**
+- Click the gear menu and choose **Install Plugin From File…**
+- In ScanTailor Spectre, choose **Help → Install Zotero Plugin…**, then select the revealed `st-spectre-loop.xpi`
+
+Zotero must be running when you export — the cleaned PDF is handed back through Zotero itself.
+
+### Cleaning a Scan from Zotero
+
+- Right-click a book or its PDF in Zotero and choose **Clean scan in ScanTailor Spectre…**
+- A dialog confirms which item and PDF you picked and where projects will be kept. The first time, click **Change…** and pick a projects folder — nothing is written anywhere until you have chosen one.
+- Click **Clean Scan**. A copy of the PDF goes into a new folder named after the item, inside your projects folder, and ScanTailor Spectre opens it.
+
+If an item has several PDFs, the dialog lets you pick which one; if you right-clicked a specific PDF, exactly that file is used.
+
+### Returning the Cleaned PDF
+
+Work through the stages as usual. For Zotero round-trip projects, **Return to Zotero** in the Export stage is turned on automatically (unchecking it is remembered for that project). When you export, the finished PDF is attached to the original Zotero item, and the export also succeeds locally even if Zotero is unreachable at that moment.
+
+## Features
+- **Auto Mode** - One-button processing through all stages with smart defaults: majority-vote page splitting, zero deskew, content outlier detection, and size outlier handling
+- **Apple Silicon Native** -  Gatekeeper-friendly application
+- **PDF Import** - Open PDFs directly, no need to extract pages first
+- **Batch Processing Summaries** - Dialogs after stages 2, 4, 5 to catch problems and jump to pages needing attention
+- **Detection Settings** - Adjustable Fill Factor and Border Tolerance for art books and photo-heavy content
+- **Finalize Stage** - New stage for color mode selection and output format
+- **Intelligent Color Detection** - Auto-detects B&W vs grayscale vs color pages, including embedded photographs
+- **Photo Adjustments** - Temp, Tint, Exposure, Contrast, Highlights, Shadows, Whites, Blacks sliders with Auto and Reset. Exposure covers -1.00 to +1.00 f-stops in fine 0.01-stop steps.
+- **Packaged Web Output Panel** - Output stage web controls now ship with the required Qt WebEngine helper dependencies in the app bundle
+- **OCR Stage** - Automatic text recognition for searchable PDFs
+- **Export Stage** - New dedicated PDF export with quality presets
 
 ---
 
@@ -526,10 +441,148 @@ ScanTailor Spectre is a Mac-native fork of ScanTailor Advanced, developed by Cla
 
 First, the name serves to distinguish it from other community releases, including ScanTailor, ScanTailor Advanced, and ScanTailor Experimental.
 
-Second, the title references the opening line of the Communist Manifesto: "A spectre is haunting Europe." Jacques Derrida, in "Spectres of Marx" wrote that the dead refuse to remain absent. For Derrida, this refers to the spectre of Marxism, but it can also refer to the haunting of the Internet by the ongoing persistance of ScanTailor as well as to the scanned book existing as a ghostly trace circulating online rather than as a physical object.
+Second, the title references the opening line of the Communist Manifesto: "A spectre is haunting Europe." Jacques Derrida, in "Spectres of Marx" wrote that the dead refuse to remain absent. For Derrida, this refers to the spectre of Marxism, but it can also refer to the haunting of the Internet by the ongoing persistence of ScanTailor as well as to the scanned book existing as a ghostly trace circulating online rather than as a physical object.
 
-Fourth, ScanTailor Spectre is developed using Claude Code. The name also draws attention to the role of unauthorized book scans in the development of large language model artificial intelligences. It is illegal to copy and distribute copyrighted books, and we do not condone using ScanTailor Spectre for such purposes. Both Anthropic and Meta trained their models on millions of books obtained from shadow libraries such as Library Genesis, which are motivated by a vision of information freedom championed by Aaron Swartz. Recently, Anthropic settled with authors for $1.5 billion, equating to approximately $3,000 per book, a sum that exceeds the lifetime earnings of most books. In contemporary society, intellectual property is controlled not by individuals, but by those in positions of power.
+Third, ScanTailor Spectre is developed using Claude Code. The name also draws attention to the role of unauthorized book scans in the development of large language model artificial intelligences. It is illegal to copy and distribute copyrighted books, and we do not condone using ScanTailor Spectre for such purposes. Both Anthropic and Meta trained their models on millions of books obtained from shadow libraries such as Library Genesis, which are motivated by a vision of information freedom championed by Aaron Swartz. Recently, Anthropic settled with authors for $1.5 billion, equating to approximately $3,000 per book, a sum that exceeds the lifetime earnings of most books. In contemporary society, intellectual property is controlled not by individuals, but by those in positions of power.
 
 Lastly, the first application I vibe-coded was a clone of the 1990s game Spectre VR. 
 
 The "spectre in the machine" draws on all of these. 
+
+## Version History
+
+### Version 2.0b1
+
+- Exposure adjustment now uses fine 0.01-stop steps across a focused -1.00 to +1.00 f-stop range, with older out-of-range project values safely clamped.
+- Mixed pages now have their own independent thumbnail filter and `Shift+M` shortcut instead of being folded into the Color filter.
+- Zotero round trips now ask you to choose their workspace folder, remember that choice, and provide a clear way to change it instead of silently writing to Documents.
+- New Zotero projects use visible, folder-named `.ScanTailor` files, while projects created with the former hidden filename still open normally.
+- Returning an exported PDF now includes Zotero's required connector protocol header, preventing successful exports from being reported as unreachable.
+- Closing the app no longer schedules overlapping save prompts that could crash the window during shutdown.
+- The Export stage now keeps **Export PDF** and the Zotero return status in a fixed footer while settings and book metadata scroll independently, and the panel stays reachable even in very short windows.
+- Zotero round-trip projects now turn on **Return to Zotero** automatically; unchecking it is remembered for that project.
+
+### Version 2.0a38
+
+- Force B&W Auto mode now handles scanned leaves embedded inside pure-white PDF mattes without turning the leaf black, including sparse title pages, inverted-polarity decisions, and faint low-contrast versos.
+- Output normalization now learns illumination from the physical paper rather than the PDF canvas, while preserving genuinely dark, saturated covers.
+- Output render caches are versioned so pages produced by the faulty renderer are regenerated automatically.
+
+### Version 2.0a37
+
+- Zotero round-trip projects can now be launched directly from their staging directory. ScanTailor Spectre resumes an existing project or creates and saves one from the staged source PDF.
+- The Export stage recognizes Zotero loop sidecars and can return each successfully exported PDF to its original Zotero item as a new attachment, with authenticated error reporting that never invalidates the PDF export.
+
+### Version 2.0a36
+
+- Hotfix: pressing F outside the Margins stage silently switched selected pages to Full Bleed (skipping margin standardization in output) — present since 2.0a32. The shortcut now works only in Margins, where the checkbox is visible. Affected saved projects: select the pages in Margins and uncheck "Full bleed page" to restore uniform margins.
+
+### Version 2.0a35
+
+- The pipeline is now photograph-aware. Validated page-by-page against a 268-page photography monograph alongside the existing text-book corpus.
+- Color detection rebuilt on spatial evidence: full-page photographic plates lost to B&W binarization dropped from 139/185 to 4/185; all 19 mixed text+photo pages now correctly preserve their photographs; text-page classification remains exact.
+- Geometry stages no longer treat photographs as documents: photo pages are not split, not rotated by scene edges, and keep full-page content. Near-square single leaves never auto-split without physical gutter evidence — two-column layouts no longer masquerade as spreads. Every automatic decision records its reason in the project file.
+- Mixed-mode output finds each photograph's printed frame and fills it to exact edges; bright regions inside photos (faces, skies) are no longer bleached to paper.
+- Detection results are versioned: improved future detectors automatically re-judge stale automatic decisions while manual choices stay authoritative.
+
+### Version 2.0a34 — The Second Speed Build
+
+**Released July 24, 2026.** Version 2.0a34 is the second major performance
+release for modern Apple Silicon Macs. On the same 392-page scanned-book
+workflow, observed end-to-end times progressed from **6 m 38 s in v2.0a19** to
+**3 m 28 s in v2.0a33**, then to the following choices in v2.0a34:
+
+| OCR setting | 392-page time | Intended use |
+|---|---:|---|
+| Accurate OCR + language correction | **2 m 48 s** | Highest measured text quality |
+| Accurate OCR + skip language correction | **1 m 30 s** | Best speed/quality balance |
+| Fast OCR + skip language correction | **29.5 s** | Maximum throughput; largest OCR accuracy tradeoff |
+
+These are measured runs on the reference book, not a promise that every book
+or Mac will finish in exactly the same time. Fast OCR is substantially less
+accurate than Accurate OCR; use the 1 m 30 s setting when searchable-text
+quality still matters.
+
+- Auto Process now keeps decoded PDF pages in a RAM-aware cache and coalesces
+  concurrent requests for the same page, avoiding repeated rasterization. It
+  also combines compatible pipeline stages and carries Output's newly
+  processed in-memory image directly into OCR instead of saving and reloading
+  it or running Output twice.
+- Mixed mode is now conservatively autodetected from the existing Finalize
+  color analysis. It finds localized continuous-tone pictures on otherwise
+  document-like pages without adding another full-image detection pass, and
+  the choice is preserved correctly through Finalize and Output.
+- The OCR stage and Auto Process dialog now expose the same three remembered
+  controls: **Fast OCR**, **Multilingual detection**, and **Skip language
+  correction**.
+- The language choices are now honest about their cost. **System language**
+  is the fast default; **Multilingual detection** enables true automatic
+  language detection and is deliberately labeled slower. A selected primary
+  language is used only when multilingual detection is off.
+- OCR result caching now includes the recognition mode, language-correction
+  choice, engine schema, and output-file identity, so changing OCR settings or
+  regenerating a page cannot silently reuse stale text.
+- Fixed unbounded Apple Vision object lifetime growth during long OCR runs and
+  retained stable page-parallel Vision OCR as the default.
+- macOS 26's new document-recognition engine was investigated using only
+  Weasel's newly processed in-memory page images. It can be faster on short
+  runs, but concurrent requests crashed inside Apple's framework during
+  full-book stress tests, while the stable serialized form was slower than the
+  normal engine. It therefore remains research-only and opt-in through
+  `SCANTAILOR_DOCUMENT_VISION_OCR=1`; it never reads or reuses text from the
+  original PDF.
+- Added performance instrumentation and regression coverage for image-cache
+  behavior, OCR cache validity, color/Mixed classification, PDF loading, and
+  long-run stability. The release keeps the crash-prone document-OCR
+  concurrency path disabled.
+
+### Version 2.0a33 — The First Speed Build
+
+**Measured speedup:** a 392-page scanned book ([*The Best Short Stories of 1924*, Internet Archive](https://archive.org/details/bestshortstories1924unse)) auto-processes end-to-end — including accurate-mode OCR — in **3 m 28 s (0.53 s/page)**, versus 6 m 38 s on v2.0a19: about **1.9× faster overall, and 5–6× faster in the processing pipeline itself** (OCR time is Apple Vision's and unchanged). Color classification on the same book improved from 340 pages wrongly detected as Color to 388 correct B&W pages, with only the covers (grayscale) and the bookplate/library card (color) treated specially.
+
+- Major performance overhaul: parallel PDF rasterization, decoded-image cache, coalesced thumbnail updates, batch queue refill before UI work, gated per-page parallelism.
+- OCR receives the rendered output image in memory; PDF export moved off the GUI thread with cancellation and atomic file replacement.
+- New unified "Auto Process…" dialog: color handling preset (Force B&W / B&W + grayscale / Best guess), OCR on/off, remembered settings.
+- Auto-process runs report elapsed time and per-stage breakdown.
+- Fixed three long-standing silent image-pipeline bugs: gray morphology min/max was inverted in the accelerated (vImage/Metal) paths since December, distorting Mixed-mode picture detection and page-split line finding; grayscale downscaling used a resampler that strayed up to 66 gray levels from the intended area average; and morphological reconstruction (seed fill) could stop propagating early, subtly affecting picture detection and background estimation.
+- Added acceleration parity tests so GPU/SIMD paths can no longer silently diverge from the reference implementation; test suites are now fully green.
+- Finalize no longer silently misclassifies aged/toned paper as Color when margin sampling fails.
+
+### Version 2.0a32
+
+- PDF export now opens in the source document's folder with a safe `<source>_processed.pdf` fallback name.
+- Saving a new project now carries already-generated pages and thumbnails from temporary storage into the project's `output` folder.
+
+### Version 2.0a31
+
+- Export now includes book metadata fields, recommended PDF filenames, ISBN lookup, and optional send-to-Zotero support for the locally running Zotero app.
+- After exporting a PDF, the success dialog now has a **Reveal in Finder** button so you can jump straight to the file you just saved.
+- Margins now supports full-bleed pages with the `F` shortcut; full-bleed pages ignore content boxes and match-size aggregation.
+- The Margins stage now has one **Apply To** flow for page layout instead of separate competing margin/alignment buttons.
+- The macOS startup view no longer falls back to the oversized legacy gray project panel.
+- Output uses the native controls again to avoid QtWebEngine/macOS accessibility crashes.
+
+### Version 2.0a30
+
+- Output photo adjustments now show a single, unified panel for Color and Grayscale pages. No more duplicated panels, and no empty gap between the sliders and Dewarping.
+- Sliders feel smoother during drag: the app no longer stutters while you fine-tune adjustments.
+- Exposure, Contrast, Highlights/Shadows, and Whites/Blacks now apply in the same order Lightroom uses, so results match what you'd expect from other photo tools.
+- Stage 2 (Split Pages): opening older projects no longer re-runs detection on every page.
+- Stage 2 (Split Pages): art books with broad, dark binding gutters are detected more reliably.
+- Stage 4 (Page Box): applying a page box across pages of different sizes or rotations now stays centered instead of drifting off the page.
+- Dark-theme slider handles now render cleanly (previously slightly clipped).
+- Stability and packaging improvements: the app bundle is more self-contained and safer to close during the Output stage.
+
+### Version 2.0a29
+
+- Output photo-adjustment sliders are now responsive: thumbnails redraw once after a 300 ms pause instead of on every drag tick.
+- Clicking anywhere on a slider track now jumps the handle to that position (Lightroom-style), in addition to the existing drag behaviour.
+- Numeric value boxes next to each slider are now compact and no longer expand to fill the column.
+- Removes a stale snap-to-zero behaviour that interrupted slider drags mid-stroke.
+
+### Version 2.0a28
+
+- Adds photo adjustment controls in Output, including exposure, contrast, highlights, shadows, whites, blacks, temperature, and tint.
+- Fixes photo adjustments so they apply properly to multiple selected pages and refresh the thumbnails afterward.
+- Fixes Output so B&W and grayscale pages show the right controls instead of the full color adjustment panel.
+- Sets the minimum supported macOS version to 15.

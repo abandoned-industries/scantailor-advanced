@@ -72,6 +72,7 @@ QDomElement Filter::saveSettings(const ProjectWriter& writer, QDomDocument& doc)
   filterEl.setAttribute("compressGrayscale", m_settings->compressGrayscale() ? "1" : "0");
   filterEl.setAttribute("quality", static_cast<int>(m_settings->quality()));
   filterEl.setAttribute("sendToZotero", m_settings->sendToZotero() ? "1" : "0");
+  filterEl.setAttribute("sendToZoteroExplicit", m_settings->hasExplicitSendToZoteroChoice() ? "1" : "0");
 
   const BookMetadata meta(m_settings->bookMetadata());
   QDomElement metadataEl(doc.createElement("metadata"));
@@ -91,6 +92,7 @@ QDomElement Filter::saveSettings(const ProjectWriter& writer, QDomDocument& doc)
 void Filter::loadSettings(const ProjectReader& reader, const QDomElement& filtersEl) {
   const QDomElement filterEl(filtersEl.namedItem("export").toElement());
   if (filterEl.isNull()) {
+    m_settings->setSendToZotero(false, false);
     return;
   }
 
@@ -98,7 +100,13 @@ void Filter::loadSettings(const ProjectReader& reader, const QDomElement& filter
   m_settings->setMaxDpi(filterEl.attribute("maxDpi", "400").toInt());
   m_settings->setCompressGrayscale(filterEl.attribute("compressGrayscale", "0") == "1");
   m_settings->setQuality(static_cast<PdfExporter::Quality>(filterEl.attribute("quality", "1").toInt()));
-  m_settings->setSendToZotero(filterEl.attribute("sendToZotero", "0") == "1");
+  // Builds before 2.0b1 always serialized sendToZotero="0", even when the
+  // user never touched the checkbox.  The value alone therefore can't prove
+  // an intentional opt-out.  Only the companion marker written by current
+  // builds makes either value an explicit project choice.
+  const bool hasExplicitSendToZoteroChoice = filterEl.attribute("sendToZoteroExplicit", "0") == "1";
+  m_settings->setSendToZotero(filterEl.attribute("sendToZotero", "0") == "1",
+                              hasExplicitSendToZoteroChoice);
 
   const QDomElement metadataEl(filterEl.namedItem("metadata").toElement());
   if (!metadataEl.isNull()) {
@@ -140,5 +148,9 @@ void Filter::setOutputSettings(std::shared_ptr<output::Settings> outputSettings)
 
 void Filter::setOcrSettings(std::shared_ptr<ocr::Settings> ocrSettings) {
   m_optionsWidget->setOcrSettings(std::move(ocrSettings));
+}
+
+void Filter::setProjectFilePath(const QString& projectFilePath) {
+  m_optionsWidget->setProjectFilePath(projectFilePath);
 }
 }  // namespace export_

@@ -33,6 +33,7 @@ class ZoteroClient : public QObject {
   struct Result {
     Status status;
     QString message;  // human-readable, already tr()'d
+    QString attachmentKey{};
 
     bool ok() const { return status == Status::Ok; }
   };
@@ -47,6 +48,17 @@ class ZoteroClient : public QObject {
    * from a timer). The client must outlive the pending reply.
    */
   void pingAsync(std::function<void(bool)> callback);
+
+  /**
+   * Asynchronously return an exported PDF to an existing Zotero item through
+   * the authenticated ScanTailor Spectre add-on endpoint.
+   */
+  void returnAttachmentAsync(const QString& returnUrl,
+                             const QString& token,
+                             const QString& itemKey,
+                             const QString& pdfPath,
+                             std::function<void(Result)> callback,
+                             int timeoutMs = 60000);
 
   /**
    * Blocking connectivity check. Runs a nested event loop with a single-shot

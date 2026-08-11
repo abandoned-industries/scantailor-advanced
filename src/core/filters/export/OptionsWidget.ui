@@ -18,7 +18,35 @@
     <number>0</number>
    </property>
    <item>
-    <widget class="QGroupBox" name="outputResolutionGroup">
+    <widget class="QScrollArea" name="settingsScrollArea">
+     <property name="sizeAdjustPolicy">
+      <enum>QAbstractScrollArea::AdjustIgnored</enum>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::NoFrame</enum>
+     </property>
+     <property name="horizontalScrollBarPolicy">
+      <enum>Qt::ScrollBarAlwaysOff</enum>
+     </property>
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <widget class="QWidget" name="settingsScrollContents">
+      <layout class="QVBoxLayout" name="settingsScrollLayout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="QGroupBox" name="outputResolutionGroup">
      <property name="title">
       <string>Output Resolution</string>
      </property>
@@ -48,10 +76,10 @@
        </spacer>
       </item>
      </layout>
-    </widget>
-   </item>
-   <item>
-    <widget class="QGroupBox" name="pdfExportGroup">
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="pdfExportGroup">
      <property name="title">
       <string>PDF Export</string>
      </property>
@@ -134,27 +162,20 @@
         </item>
        </layout>
       </item>
-      <item>
-       <widget class="QPushButton" name="exportToPdfBtn">
-        <property name="text">
-         <string>Export to PDF...</string>
-        </property>
-        <property name="icon">
-         <iconset theme="document-save-as"/>
-        </property>
-       </widget>
-      </item>
      </layout>
-    </widget>
-   </item>
-   <item>
-    <widget class="QGroupBox" name="metadataGroup">
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="metadataGroup">
      <property name="title">
       <string>Book Metadata</string>
      </property>
      <layout class="QVBoxLayout" name="metadataVLayout">
       <item>
        <layout class="QFormLayout" name="metadataFormLayout">
+        <property name="fieldGrowthPolicy">
+         <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+        </property>
         <item row="0" column="0">
          <widget class="QLabel" name="titleFieldLabel">
           <property name="text">
@@ -163,7 +184,17 @@
          </widget>
         </item>
         <item row="0" column="1">
-         <widget class="QLineEdit" name="titleLineEdit"/>
+         <widget class="QLineEdit" name="titleLineEdit">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size><width>24</width><height>0</height></size>
+          </property>
+         </widget>
         </item>
         <item row="1" column="0">
          <widget class="QLabel" name="authorsFieldLabel">
@@ -174,6 +205,14 @@
         </item>
         <item row="1" column="1">
          <widget class="QLineEdit" name="authorsLineEdit">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+            <horstretch>0</horstretch><verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size><width>24</width><height>0</height></size>
+          </property>
           <property name="placeholderText">
            <string>First Last; First Last</string>
           </property>
@@ -188,6 +227,14 @@
         </item>
         <item row="2" column="1">
          <widget class="QComboBox" name="roleCombo">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+            <horstretch>0</horstretch><verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size><width>24</width><height>0</height></size>
+          </property>
           <property name="toolTip">
            <string>Creator role applied to all authors when sending to Zotero</string>
           </property>
@@ -201,7 +248,10 @@
          </widget>
         </item>
         <item row="3" column="1">
-         <widget class="QLineEdit" name="yearLineEdit"/>
+         <widget class="QLineEdit" name="yearLineEdit">
+          <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+          <property name="minimumSize"><size><width>24</width><height>0</height></size></property>
+         </widget>
         </item>
         <item row="4" column="0">
          <widget class="QLabel" name="publisherFieldLabel">
@@ -211,7 +261,10 @@
          </widget>
         </item>
         <item row="4" column="1">
-         <widget class="QLineEdit" name="publisherLineEdit"/>
+         <widget class="QLineEdit" name="publisherLineEdit">
+          <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+          <property name="minimumSize"><size><width>24</width><height>0</height></size></property>
+         </widget>
         </item>
         <item row="5" column="0">
          <widget class="QLabel" name="placeFieldLabel">
@@ -221,7 +274,10 @@
          </widget>
         </item>
         <item row="5" column="1">
-         <widget class="QLineEdit" name="placeLineEdit"/>
+         <widget class="QLineEdit" name="placeLineEdit">
+          <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+          <property name="minimumSize"><size><width>24</width><height>0</height></size></property>
+         </widget>
         </item>
         <item row="6" column="0">
          <widget class="QLabel" name="isbnFieldLabel">
@@ -231,7 +287,10 @@
          </widget>
         </item>
         <item row="6" column="1">
-         <widget class="QLineEdit" name="isbnLineEdit"/>
+         <widget class="QLineEdit" name="isbnLineEdit">
+          <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+          <property name="minimumSize"><size><width>24</width><height>0</height></size></property>
+         </widget>
         </item>
         <item row="7" column="0">
          <widget class="QLabel" name="languageFieldLabel">
@@ -241,7 +300,10 @@
          </widget>
         </item>
         <item row="7" column="1">
-         <widget class="QLineEdit" name="languageLineEdit"/>
+         <widget class="QLineEdit" name="languageLineEdit">
+          <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+          <property name="minimumSize"><size><width>24</width><height>0</height></size></property>
+         </widget>
         </item>
        </layout>
       </item>
@@ -276,18 +338,72 @@
        </widget>
       </item>
      </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="settingsVerticalSpacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
     </widget>
    </item>
    <item>
-    <widget class="QGroupBox" name="zoteroGroup">
+    <widget class="QFrame" name="exportFooter">
+     <property name="frameShape">
+      <enum>QFrame::NoFrame</enum>
+     </property>
+     <layout class="QVBoxLayout" name="exportFooterLayout">
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QGroupBox" name="zoteroGroup">
      <property name="title">
       <string>Zotero</string>
      </property>
      <layout class="QVBoxLayout" name="zoteroVLayout">
       <item>
+       <widget class="QLabel" name="zoteroPluginWarningLabel">
+        <property name="visible">
+         <bool>false</bool>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">color: #d17a00;</string>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QLabel" name="zoteroStatusLabel">
         <property name="text">
          <string>Zotero: checking…</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
         </property>
        </widget>
       </item>
@@ -299,20 +415,20 @@
        </widget>
       </item>
      </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="exportToPdfBtn">
+        <property name="text">
+         <string>Export PDF...</string>
+        </property>
+        <property name="icon">
+         <iconset theme="document-save-as"/>
+        </property>
+       </widget>
+      </item>
+     </layout>
     </widget>
-   </item>
-   <item>
-    <spacer name="verticalSpacer">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>40</height>
-      </size>
-     </property>
-    </spacer>
    </item>
   </layout>
  </widget>

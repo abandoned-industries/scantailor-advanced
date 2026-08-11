@@ -10,6 +10,7 @@
 #include <QSignalBlocker>
 #include <QToolTip>
 #include <QVariantMap>
+#include <algorithm>
 #include <utility>
 
 #include "../../Utils.h"
@@ -85,7 +86,9 @@ OptionsWidget::OptionsWidget(std::shared_ptr<Settings> settings, const PageSelec
   whitesValue->setValidator(new QIntValidator(-100, 100, whitesValue));
   blacksValue->setValidator(new QIntValidator(-100, 100, blacksValue));
 
-  auto* exposureValidator = new QDoubleValidator(-5.0, 5.0, 2, exposureValue);
+  auto* exposureValidator = new QDoubleValidator(weasel::PhotoAdjustments::MIN_EXPOSURE,
+                                                 weasel::PhotoAdjustments::MAX_EXPOSURE,
+                                                 2, exposureValue);
   exposureValidator->setNotation(QDoubleValidator::StandardNotation);
   exposureValue->setValidator(exposureValidator);
 
@@ -558,6 +561,7 @@ void OptionsWidget::photoAdjTintChanged(int value) {
 }
 
 void OptionsWidget::photoAdjExposureChanged(int value) {
+  value = std::clamp(value, exposureSlider->minimum(), exposureSlider->maximum());
   m_colorParams.setColorMode(effectiveColorMode());
   syncSliderValue(exposureSlider, value);
   exposureValue->setText(QString::number(value / 100.0, 'f', 2));
@@ -647,7 +651,7 @@ void OptionsWidget::photoAdjAutoClicked() {
   // Update all sliders and value labels
   tempSlider->setValue(static_cast<int>(adj.temp()));
   tintSlider->setValue(static_cast<int>(adj.tint()));
-  exposureSlider->setValue(static_cast<int>(adj.exposure() * 100.0));
+  exposureSlider->setValue(qRound(adj.exposure() * 100.0));
   contrastSlider->setValue(static_cast<int>(adj.contrast()));
   highlightsSlider->setValue(static_cast<int>(adj.highlights()));
   shadowsSlider->setValue(static_cast<int>(adj.shadows()));
@@ -1177,7 +1181,7 @@ void OptionsWidget::updateColorsDisplay() {
   tempValue->setText(QString::number(static_cast<int>(adj.temp())));
   tintSlider->setValue(static_cast<int>(adj.tint()));
   tintValue->setText(QString::number(static_cast<int>(adj.tint())));
-  exposureSlider->setValue(static_cast<int>(adj.exposure() * 100.0));
+  exposureSlider->setValue(qRound(adj.exposure() * 100.0));
   exposureValue->setText(QString::number(adj.exposure(), 'f', 2));
   contrastSlider->setValue(static_cast<int>(adj.contrast()));
   contrastValue->setText(QString::number(static_cast<int>(adj.contrast())));

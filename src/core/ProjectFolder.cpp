@@ -7,11 +7,12 @@
 #include <QFile>
 #include <QFileInfo>
 
-ProjectFolder::ProjectFolder(const QString& folderPath) : m_basePath(folderPath) {}
+ProjectFolder::ProjectFolder(const QString& folderPath)
+    : m_basePath(QDir::cleanPath(QFileInfo(folderPath).absoluteFilePath())) {}
 
 QString ProjectFolder::projectFilePath() const {
   // Use folder name as project file name (e.g., "MyProject" folder -> "MyProject.ScanTailor")
-  QString folderName = QFileInfo(m_basePath).fileName();
+  const QString folderName = QFileInfo(m_basePath).fileName();
   return QDir(m_basePath).filePath(folderName + ".ScanTailor");
 }
 
@@ -119,15 +120,32 @@ bool ProjectFolder::copyDirectoryContents(const QString& sourceDir, const QStrin
 }
 
 bool ProjectFolder::isValidProjectFolder(const QString& path) {
+  return !findProjectFile(path).isEmpty();
+}
+
+QString ProjectFolder::findProjectFile(const QString& path) {
   QDir dir(path);
   if (!dir.exists()) {
-    return false;
+    return QString();
   }
-  // Check for project file matching folder name
-  QString folderName = QFileInfo(path).fileName();
-  if (dir.exists(folderName + ".ScanTailor")) {
-    return true;
+
+  const QString folderName = QFileInfo(QDir::cleanPath(dir.absolutePath())).fileName();
+  const QString visibleProject = dir.filePath(folderName + ".ScanTailor");
+  if (QFileInfo(visibleProject).isFile()) {
+    return visibleProject;
   }
-  // Also accept legacy "project.ScanTailor" for backwards compatibility
-  return dir.exists("project.ScanTailor");
+
+  const QString legacyProject = dir.filePath(QStringLiteral("project.ScanTailor"));
+  if (QFileInfo(legacyProject).isFile()) {
+    return legacyProject;
+  }
+
+  const QString hiddenProject = dir.filePath(QStringLiteral(".ScanTailor"));
+  if (QFileInfo(hiddenProject).isFile()) {
+    return hiddenProject;
+  }
+
+  const QFileInfoList projects = dir.entryInfoList(
+      QStringList{QStringLiteral("*.ScanTailor")}, QDir::Files | QDir::Readable | QDir::Hidden, QDir::Name);
+  return projects.isEmpty() ? QString() : projects.constFirst().absoluteFilePath();
 }

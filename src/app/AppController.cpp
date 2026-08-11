@@ -16,7 +16,9 @@
 #include "PdfImportDialog.h"
 #include "PdfReader.h"
 #include "ProjectCreationContext.h"
+#include "ProjectFolder.h"
 #include "StartupWindow.h"
+#include "ZoteroLoopSidecar.h"
 
 AppController::AppController(QObject* parent) : QObject(parent) {}
 
@@ -27,6 +29,15 @@ void AppController::start() {
 }
 
 void AppController::openProject(const QString& path) {
+  const QFileInfo pathInfo(path);
+  if (pathInfo.isDir()) {
+    const auto sidecar = ZoteroLoopSidecar::discover(pathInfo.absoluteFilePath());
+    if (sidecar) {
+      openZoteroLoopDirectory(pathInfo.absoluteFilePath(), *sidecar);
+      return;
+    }
+  }
+
   // Check if this is a PDF file - if so, use the PDF import flow
   if (path.endsWith(".pdf", Qt::CaseInsensitive)) {
     openPdfFile(path);
@@ -40,7 +51,20 @@ void AppController::openProject(const QString& path) {
   }
 }
 
-void AppController::openPdfFile(const QString& pdfFile) {
+void AppController::openZoteroLoopDirectory(const QString& directory, const ZoteroLoopSidecar& sidecar) {
+  const QString projectFile = ProjectFolder::findProjectFile(directory);
+  if (!projectFile.isEmpty()) {
+    MainWindow* window = createNewMainWindow();
+    if (window) {
+      window->openProject(projectFile);
+    }
+    return;
+  }
+
+  openPdfFile(sidecar.sourcePdf, directory);
+}
+
+void AppController::openPdfFile(const QString& pdfFile, const QString& projectDirectory) {
   // Read PDF info to get page count and detected DPI
   const PdfReader::PdfInfo pdfInfo = PdfReader::readPdfInfo(pdfFile);
   if (pdfInfo.pageCount == 0) {
@@ -65,7 +89,11 @@ void AppController::openPdfFile(const QString& pdfFile) {
   // Create new MainWindow and import the PDF
   MainWindow* window = createNewMainWindow();
   if (window) {
-    window->importPdfFile(pdfFile);
+    if (projectDirectory.isEmpty()) {
+      window->importPdfFile(pdfFile);
+    } else {
+      window->importPdfFileToProject(pdfFile, projectDirectory);
+    }
     if (benchmarkAuto) {
       QTimer::singleShot(0, window, &MainWindow::startBenchmarkAutoProcess);
     }

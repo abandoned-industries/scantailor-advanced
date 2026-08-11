@@ -83,6 +83,35 @@ trap "rm -rf $DMG_TEMP_DIR" EXIT
 echo "Copying app bundle..."
 cp -R "$APP_BUNDLE" "$DMG_TEMP_DIR/"
 
+# Include the exact Zotero companion plugin already validated, copied, and
+# signed into the app bundle by the scantailor_bundle target.
+XPI_PATH="$APP_BUNDLE/Contents/Resources/st-spectre-loop.xpi"
+if [ ! -f "$XPI_PATH" ]; then
+    echo "Error: Bundled Zotero plugin not found: $XPI_PATH"
+    echo "Run $PROJECT_ROOT/zotero-plugin/build.sh, then rebuild the scantailor_bundle target."
+    exit 1
+fi
+
+manifest_version() {
+    /usr/bin/sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*$/\1/p'
+}
+
+PLUGIN_MANIFEST_PATH="$PROJECT_ROOT/zotero-plugin/manifest.json"
+SOURCE_PLUGIN_VERSION=$(manifest_version < "$PLUGIN_MANIFEST_PATH")
+XPI_PLUGIN_VERSION=$(/usr/bin/unzip -p "$XPI_PATH" manifest.json | manifest_version)
+if [ -z "$SOURCE_PLUGIN_VERSION" ] || [ -z "$XPI_PLUGIN_VERSION" ]; then
+    echo "Error: Could not read the Zotero plugin version from the source manifest or XPI."
+    echo "Run $PROJECT_ROOT/zotero-plugin/build.sh, then rebuild the scantailor_bundle target."
+    exit 1
+fi
+if [ "$SOURCE_PLUGIN_VERSION" != "$XPI_PLUGIN_VERSION" ]; then
+    echo "Error: Bundled Zotero plugin XPI is stale (XPI $XPI_PLUGIN_VERSION, source $SOURCE_PLUGIN_VERSION)."
+    echo "Run $PROJECT_ROOT/zotero-plugin/build.sh, then rebuild the scantailor_bundle target."
+    exit 1
+fi
+echo "Copying Zotero plugin..."
+cp "$XPI_PATH" "$DMG_TEMP_DIR/"
+
 # Create a symbolic link to /Applications
 ln -s /Applications "$DMG_TEMP_DIR/Applications"
 

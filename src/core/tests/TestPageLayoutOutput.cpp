@@ -6,11 +6,16 @@
 #include <PageId.h>
 
 #include <QImage>
+#include <QLinearGradient>
+#include <QPainter>
 #include <QPolygonF>
+#include <QDomDocument>
 #include <boost/test/unit_test.hpp>
 
 #include "filters/output/DepthPerception.h"
+#include "filters/output/BlackWhiteOptions.h"
 #include "filters/output/OutputGenerator.h"
+#include "filters/output/OutputImageParams.h"
 #include "filters/output/Params.h"
 #include "filters/output/Settings.h"
 #include "filters/page_layout/Alignment.h"
@@ -79,6 +84,72 @@ RenderedPage renderPage(const FilterData& data,
   return {rendered->toImage(), generator.outputContentRect()};
 }
 
+QImage renderBorderedOtsuPage(bool blackOnWhite, bool lowContrast = false) {
+  const QSize imageSize(1000, 1400);
+  const QRect pageImageRect(100, 50, 800, 1300);
+  const QRect textRect(360, 240, 280, 100);
+
+  QImage image(imageSize, QImage::Format_RGB32);
+  image.fill(Qt::white);
+  {
+    QPainter painter(&image);
+    if (lowContrast) {
+      QLinearGradient paperGradient(pageImageRect.topLeft(), pageImageRect.topRight());
+      paperGradient.setColorAt(0.0, QColor(150, 150, 150));
+      paperGradient.setColorAt(1.0, QColor(180, 180, 180));
+      painter.fillRect(pageImageRect, paperGradient);
+      painter.fillRect(textRect, QColor(125, 125, 125));
+    } else {
+      painter.fillRect(pageImageRect, QColor(158, 149, 131));
+      painter.fillRect(textRect, QColor(45, 40, 35));
+    }
+  }
+  image.setDotsPerMeterX(11811);
+  image.setDotsPerMeterY(11811);
+
+  FilterData data(image);
+  data.updateImageParams(
+      ImageSettings::PageParams(imageproc::BinaryThreshold(128), blackOnWhite));
+  const PageId pageId(ImageId(
+      blackOnWhite ? QStringLiteral("white-border-title-page")
+                   : QStringLiteral("white-border-inverted-polarity-page"),
+      1));
+
+  ImageTransformation outputXform(data.xform());
+  outputXform.setPostCropArea(outputXform.resultingRect());
+  outputXform.postScaleToDpi(Dpi(300, 300));
+  // Auto Process preserves sparse-page layout by making content equal the
+  // full PDF canvas.  This deliberately includes both the beige scan and its
+  // white matte, matching the production failure.
+  const QPolygonF fullPdfCanvasPhys(
+      data.xform().transformBack().map(QRectF(image.rect())));
+
+  auto outputSettings = std::make_shared<output::Settings>();
+  output::Params outputParams;
+  outputParams.setOutputDpi(Dpi(300, 300));
+  outputParams.setDespeckleLevel(0.0);
+  outputParams.setBlackOnWhite(blackOnWhite);
+  output::ColorParams colorParams(outputParams.colorParams());
+  colorParams.setColorMode(output::BLACK_AND_WHITE);
+  output::BlackWhiteOptions bwOptions(colorParams.blackWhiteOptions());
+  bwOptions.setBinarizationMethod(output::T_OTSU);
+  colorParams.setBlackWhiteOptions(bwOptions);
+  outputParams.setColorParams(colorParams);
+  outputSettings->setParams(pageId, outputParams);
+
+  const output::OutputGenerator generator(outputXform, fullPdfCanvasPhys);
+  ZoneSet pictureZones;
+  const ZoneSet fillZones;
+  dewarping::DistortionModel distortionModel;
+  NullTaskStatus status;
+  std::unique_ptr<output::OutputImage> rendered(generator.process(
+      status, FilterData(data, outputXform), pictureZones, fillZones,
+      distortionModel, output::DepthPerception(), nullptr, nullptr, nullptr,
+      pageId, outputSettings));
+  BOOST_REQUIRE(rendered);
+  return rendered->toImage();
+}
+
 }  // namespace
 
 BOOST_AUTO_TEST_SUITE(PageLayoutOutputTestSuite)
@@ -125,6 +196,60 @@ BOOST_AUTO_TEST_CASE(match_size_renders_equal_margin_inclusive_canvases) {
   // match-size space is added to the bottom and right.
   BOOST_CHECK_SMALL(first.contentRect.left() - second.contentRect.left(), 1);
   BOOST_CHECK_SMALL(first.contentRect.top() - second.contentRect.top(), 1);
+}
+
+BOOST_AUTO_TEST_CASE(otsu_refines_dominant_beige_leaf_on_full_pdf_canvas) {
+  const QSize imageSize(1000, 1400);
+  const QRect pageImageRect(100, 50, 800, 1300);
+  const QRect textRect(360, 240, 280, 100);
+  const QImage result(renderBorderedOtsuPage(true));
+  BOOST_REQUIRE(result.size() == imageSize);
+  BOOST_CHECK_GT(qGray(result.pixel(pageImageRect.center().x(), pageImageRect.bottom() - 100)), 240);
+  BOOST_CHECK_LT(qGray(result.pixel(textRect.center())), 15);
+  BOOST_CHECK_GT(qGray(result.pixel(20, imageSize.height() / 2)), 240);
+}
+
+BOOST_AUTO_TEST_CASE(otsu_refines_dominant_beige_leaf_with_inverted_polarity) {
+  const QSize imageSize(1000, 1400);
+  const QRect pageImageRect(100, 50, 800, 1300);
+  const QRect textRect(360, 240, 280, 100);
+  const QImage result(renderBorderedOtsuPage(false));
+  BOOST_REQUIRE(result.size() == imageSize);
+  BOOST_CHECK_GT(qGray(result.pixel(pageImageRect.center().x(), pageImageRect.bottom() - 100)), 240);
+  BOOST_CHECK_LT(qGray(result.pixel(textRect.center())), 15);
+  BOOST_CHECK_GT(qGray(result.pixel(20, imageSize.height() / 2)), 240);
+}
+
+BOOST_AUTO_TEST_CASE(normalization_models_low_contrast_leaf_inside_white_matte) {
+  const QSize imageSize(1000, 1400);
+  const QRect pageImageRect(100, 50, 800, 1300);
+  const QRect textRect(360, 240, 280, 100);
+  const QImage result(renderBorderedOtsuPage(true, true));
+  BOOST_REQUIRE(result.size() == imageSize);
+  BOOST_CHECK_GT(qGray(result.pixel(pageImageRect.left() + 100,
+                                   pageImageRect.bottom() - 100)), 240);
+  BOOST_CHECK_GT(qGray(result.pixel(pageImageRect.right() - 100,
+                                   pageImageRect.bottom() - 100)), 240);
+  BOOST_CHECK_LT(qGray(result.pixel(textRect.center())), 15);
+}
+
+BOOST_AUTO_TEST_CASE(output_render_version_invalidates_legacy_cache) {
+  const QSize imageSize(1000, 1400);
+  ImageTransformation xform(QRectF(QPointF(0, 0), imageSize), Dpi(300, 300));
+  const output::OutputImageParams current(
+      imageSize, QRect(QPoint(0, 0), imageSize), xform, Dpi(300, 300),
+      output::ColorParams(), output::SplittingOptions(), output::DewarpingOptions(),
+      dewarping::DistortionModel(), output::DepthPerception(), 0.0,
+      output::PictureShapeOptions(), output::OutputProcessingParams(), true);
+
+  QDomDocument doc;
+  QDomElement currentElement(current.toXml(doc, QStringLiteral("output-image-params")));
+  const output::OutputImageParams roundTrip(currentElement);
+  BOOST_CHECK(current.matches(roundTrip));
+
+  currentElement.removeAttribute(QStringLiteral("renderVersion"));
+  const output::OutputImageParams legacy(currentElement);
+  BOOST_CHECK(!current.matches(legacy));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

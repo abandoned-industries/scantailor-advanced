@@ -11,7 +11,7 @@ PhotoAdjustments::PhotoAdjustments(const QDomElement& el) {
   if (el.isNull()) return;
   m_temp = std::clamp(el.attribute("temp", "0").toDouble(), -100.0, 100.0);
   m_tint = std::clamp(el.attribute("tint", "0").toDouble(), -100.0, 100.0);
-  m_exposure = std::clamp(el.attribute("exposure", "0").toDouble(), -5.0, 5.0);
+  m_exposure = std::clamp(el.attribute("exposure", "0").toDouble(), MIN_EXPOSURE, MAX_EXPOSURE);
   m_contrast = std::clamp(el.attribute("contrast", "0").toDouble(), -100.0, 100.0);
   m_highlights = std::clamp(el.attribute("highlights", "0").toDouble(), -100.0, 100.0);
   m_shadows = std::clamp(el.attribute("shadows", "0").toDouble(), -100.0, 100.0);

@@ -3,6 +3,8 @@
 
 #include "TonalCurve.h"
 
+#include "PhotoAdjustments.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -214,7 +216,8 @@ TonalCurve::AutoResult TonalCurve::autoDetect(const QImage& image) {
     expAdj *= 0.5;
     // Only suggest if the shift is meaningful (> 0.2 stops)
     if (std::abs(expAdj) > 0.2) {
-      result.exposure = std::clamp(expAdj, -3.0, 3.0);
+      result.exposure = std::clamp(expAdj, PhotoAdjustments::MIN_EXPOSURE,
+                                   PhotoAdjustments::MAX_EXPOSURE);
       result.exposure = std::round(result.exposure * 10.0) / 10.0;
     }
   }

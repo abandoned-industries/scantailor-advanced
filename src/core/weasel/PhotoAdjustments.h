@@ -14,6 +14,9 @@ namespace weasel {
 
 class PhotoAdjustments {
  public:
+  static constexpr double MIN_EXPOSURE = -1.0;
+  static constexpr double MAX_EXPOSURE = 1.0;
+
   PhotoAdjustments();
   explicit PhotoAdjustments(const QDomElement& el);
 
@@ -33,7 +36,7 @@ class PhotoAdjustments {
 
   // Tone
   double exposure() const { return m_exposure; }
-  void setExposure(double v) { m_exposure = std::clamp(v, -5.0, 5.0); }
+  void setExposure(double v) { m_exposure = std::clamp(v, MIN_EXPOSURE, MAX_EXPOSURE); }
 
   double contrast() const { return m_contrast; }
   void setContrast(double v) { m_contrast = std::clamp(v, -100.0, 100.0); }

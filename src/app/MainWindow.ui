@@ -107,6 +107,8 @@
     <property name="title">
      <string>Help</string>
     </property>
+    <addaction name="actionInstallZoteroPlugin"/>
+    <addaction name="separator"/>
     <addaction name="actionAbout"/>
    </widget>
    <addaction name="menuFile"/>
@@ -980,6 +982,71 @@ QToolButton:checked {
         </widget>
        </item>
        <item>
+        <widget class="QToolButton" name="filterMixedBtn">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>22</width>
+           <height>22</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>22</width>
+           <height>22</height>
+          </size>
+         </property>
+         <property name="toolTip">
+          <string>Show/hide Mixed pages in thumbnails</string>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">QToolButton:!hover {
+  padding: 0;
+  border: none;
+  background-color: transparent;
+}
+
+QToolButton:hover {
+  padding: 0;
+  border: 1px solid palette(highlight);
+  background-color: palette(base);
+}
+
+QToolButton:pressed {
+  padding: 0;
+  border: 1px solid palette(highlight);
+  background-color: palette(alternative-base);
+}
+
+QToolButton:checked:hover {
+  padding: 0;
+  border: 1px solid palette(window-text);
+  background-color: palette(base);
+}
+
+QToolButton:checked {
+  padding: 0;
+  border: 1px solid palette(window-text);
+  background-color: palette(alternative-base);
+}</string>
+         </property>
+         <property name="text">
+          <string notr="true">M</string>
+         </property>
+         <property name="checkable">
+          <bool>true</bool>
+         </property>
+         <property name="checked">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QToolButton" name="filterColorBtn">
          <property name="sizePolicy">
           <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
@@ -1434,6 +1501,11 @@ QToolButton:checked {
    </property>
    <property name="autoRepeat">
     <bool>false</bool>
+   </property>
+  </action>
+  <action name="actionInstallZoteroPlugin">
+   <property name="text">
+    <string>Install Zotero Plugin…</string>
    </property>
   </action>
   <action name="actionFixDpi">

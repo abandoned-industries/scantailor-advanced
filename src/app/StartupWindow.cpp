@@ -11,6 +11,7 @@
 #include <QVBoxLayout>
 
 #include "NewOpenProjectPanel.h"
+#include "ZoteroPluginInstaller.h"
 #include "ui_AboutDialog.h"
 #include "version.h"
 
@@ -57,8 +58,11 @@ StartupWindow::StartupWindow(QWidget* parent) : QWidget(parent) {
   quitAction->setMenuRole(QAction::QuitRole);
   connect(quitAction, &QAction::triggered, qApp, &QApplication::quit);
 
-  // Help menu with About
+  // Help menu
   auto* helpMenu = m_menuBar->addMenu(tr("&Help"));
+  auto* installZoteroPluginAction = helpMenu->addAction(tr("Install Zotero Plugin…"));
+  connect(installZoteroPluginAction, &QAction::triggered, this, &StartupWindow::revealZoteroPlugin);
+  helpMenu->addSeparator();
   auto* aboutAction = helpMenu->addAction(tr("About ScanTailor Spectre"));
   aboutAction->setMenuRole(QAction::AboutRole);  // This moves it to the app menu on macOS
   connect(aboutAction, &QAction::triggered, this, &StartupWindow::showAboutDialog);
@@ -89,4 +93,8 @@ void StartupWindow::showAboutDialog() {
   dialog->setAttribute(Qt::WA_DeleteOnClose);
   dialog->setWindowModality(Qt::WindowModal);
   dialog->show();
+}
+
+void StartupWindow::revealZoteroPlugin() {
+  ZoteroPluginInstaller::reveal(this);
 }

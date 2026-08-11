@@ -61,6 +61,7 @@
 #include "DurationFormatter.h"
 #include "AutoProcessDialog.h"
 #include "filters/finalize/AutoColorDecisionReset.h"
+#include "filters/finalize/ThumbnailColorModeFilter.h"
 #include "ErrorWidget.h"
 #include "FilterOptionsWidget.h"
 #include "FixDpiDialog.h"
@@ -101,6 +102,7 @@
 #include "UnitsProvider.h"
 #include "Utils.h"
 #include "WorkerThreadPool.h"
+#include "ZoteroPluginInstaller.h"
 #include "config.h"
 #include "filters/deskew/CacheDrivenTask.h"
 #include "filters/deskew/Dependencies.h"
@@ -290,7 +292,8 @@ PdfExportRunResult runPdfExportInBackground(
   progressDialog.setValue(0);
 
   auto cancellationRequested = std::make_shared<std::atomic_bool>(false);
-  QObject::connect(&progressDialog, &QProgressDialog::canceled, [&] {
+  const QMetaObject::Connection cancellationConnection
+      = QObject::connect(&progressDialog, &QProgressDialog::canceled, [&] {
     cancellationRequested->store(true, std::memory_order_relaxed);
     progressDialog.setLabelText(QObject::tr("Cancelling export..."));
     progressDialog.setCancelButton(nullptr);
@@ -324,8 +327,15 @@ PdfExportRunResult runPdfExportInBackground(
   if (!watcher.isFinished()) {
     waitLoop.exec();
   }
+
+  // QProgressDialog::close() emits canceled() even when the background export
+  // completed successfully. Snapshot the worker result and disconnect the
+  // user-cancellation handler before closing the dialog programmatically.
+  const bool success = watcher.result();
+  const bool cancelled = cancellationRequested->load(std::memory_order_relaxed);
+  QObject::disconnect(cancellationConnection);
   progressDialog.close();
-  return {watcher.result(), cancellationRequested->load(std::memory_order_relaxed)};
+  return {success, cancelled};
 }
 
 }  // namespace
@@ -359,6 +369,7 @@ MainWindow::MainWindow(bool restoreGeometry)
       m_restoreGeometry(restoreGeometry),
       m_debug(false),
       m_closing(false),
+      m_closeEventPending(false),
       m_quitting(false),
       m_twoPassBatchInProgress(false),
       m_twoPassTargetFilter(-1) {
@@ -375,6 +386,8 @@ MainWindow::MainWindow(bool restoreGeometry)
 
   setupUi(this);
   setupIcons();
+  m_filterDockBaseMinimumWidth = filterDockWidget->minimumWidth();
+  scrollArea->viewport()->installEventFilter(this);
 
   sortOptions->setVisible(false);
 
@@ -497,6 +510,7 @@ MainWindow::MainWindow(bool restoreGeometry)
   connect(actionNextSelectedPageW, SIGNAL(triggered(bool)), this, SLOT(goNextSelectedPage()));
   connect(actionGotoPage, SIGNAL(triggered(bool)), this, SLOT(execGotoPageDialog()));
   connect(actionAbout, SIGNAL(triggered(bool)), this, SLOT(showAboutDialog()));
+  connect(actionInstallZoteroPlugin, &QAction::triggered, this, &MainWindow::revealZoteroPlugin);
   connect(actionImportPdf, &QAction::triggered, this, &MainWindow::importPdf);
   connect(&OutOfMemoryHandler::instance(), SIGNAL(outOfMemory()), SLOT(handleOutOfMemorySituation()));
   connect(prevPageBtn, &QToolButton::clicked, this, [this]() {
@@ -577,6 +591,7 @@ MainWindow::MainWindow(bool restoreGeometry)
   };
   connect(filterBwBtn, &QToolButton::toggled, this, updateColorModeFilter);
   connect(filterGrayBtn, &QToolButton::toggled, this, updateColorModeFilter);
+  connect(filterMixedBtn, &QToolButton::toggled, this, updateColorModeFilter);
   connect(filterColorBtn, &QToolButton::toggled, this, updateColorModeFilter);
 
   // Color mode keyboard shortcuts for Finalize and Output stages
@@ -641,7 +656,7 @@ MainWindow::MainWindow(bool restoreGeometry)
   });
   // Note: 'p' for pass-through is handled in keyPressEvent to avoid falling through to QMainWindow
 
-  // Shift+C/G/B - Toggle page filters (Finalize & Output stages)
+  // Shift+C/M/G/B - Toggle page filters (Finalize & Output stages)
   auto* shortcutShiftC = new QShortcut(QKeySequence("Shift+c"), this);
   connect(shortcutShiftC, &QShortcut::activated, this, [=]() {
     if (isFinalizeOrOutputFilter()) filterColorBtn->toggle();
@@ -649,6 +664,10 @@ MainWindow::MainWindow(bool restoreGeometry)
   auto* shortcutShiftG = new QShortcut(QKeySequence("Shift+g"), this);
   connect(shortcutShiftG, &QShortcut::activated, this, [=]() {
     if (isFinalizeOrOutputFilter()) filterGrayBtn->toggle();
+  });
+  auto* shortcutShiftM = new QShortcut(QKeySequence("Shift+m"), this);
+  connect(shortcutShiftM, &QShortcut::activated, this, [=]() {
+    if (isFinalizeOrOutputFilter()) filterMixedBtn->toggle();
   });
   auto* shortcutShiftB = new QShortcut(QKeySequence("Shift+b"), this);
   connect(shortcutShiftB, &QShortcut::activated, this, [=]() {
@@ -773,6 +792,9 @@ void MainWindow::switchToNewProject(const std::shared_ptr<ProjectPages>& pages,
   if (projectReader) {
     projectReader->readFilterSettings(m_stages->filters());
   }
+  // Discover the Zotero sidecar after loading the project's explicit Export
+  // choice so an absent choice can be armed without overriding a saved one.
+  m_stages->exportFilter()->setProjectFilePath(projectFilePath);
 
   // Connect the filter list model to the view and select
   // the first item.
@@ -942,6 +964,15 @@ void MainWindow::setupThumbView() {
 }
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
+  if ((obj == scrollArea->viewport()) && (ev->type() == QEvent::Resize)
+      && qobject_cast<export_::OptionsWidget*>(m_optionsWidget.data())) {
+    const int viewportHeight = scrollArea->viewport()->height();
+    if (viewportHeight > 0) {
+      const int minimumOptionsHeight = m_optionsWidget ? m_optionsWidget->minimumSizeHint().height() : viewportHeight;
+      filterOptions->setFixedHeight(qMax(viewportHeight, minimumOptionsHeight));
+    }
+  }
+
   if ((obj == thumbView) && (ev->type() == QEvent::Resize)) {
     if (!m_sceneItemsPosUpdater.isActive()) {
       m_sceneItemsPosUpdater.start(150);
@@ -968,7 +999,10 @@ void MainWindow::closeEvent(QCloseEvent* const event) {
     event->accept();
   } else {
     event->ignore();
-    startTimer(0);
+    if (!m_closeEventPending) {
+      m_closeEventPending = true;
+      startTimer(0);
+    }
   }
 }
 
@@ -976,7 +1010,11 @@ void MainWindow::timerEvent(QTimerEvent* const event) {
   // We only use the timer event for delayed closing of the window.
   killTimer(event->timerId());
 
-  if (closeProjectInteractive()) {
+  const bool closeAccepted = closeProjectInteractive();
+  if (!closeAccepted) {
+    m_closeEventPending = false;
+  }
+  if (closeAccepted) {
 #ifdef Q_OS_MAC
     // On macOS, only close window if user explicitly chose to quit (Cmd+Q or Quit menu)
     // Otherwise emit projectClosed signal so AppController can show startup window
@@ -1176,6 +1214,30 @@ void MainWindow::setOptionsWidget(FilterOptionsWidget* widget, const Ownership o
 
   m_optionsFrameLayout->addWidget(widget);
   m_optionsWidget = widget;
+
+  // Export owns an inner scroller so its action footer can stay pinned.  Bind
+  // its frame to the outer viewport instead of letting the outer scroll area
+  // grow it to Export's full settings-content size hint. Other filters retain
+  // the traditional outer-scroller behavior.
+  const bool hasIndependentScroller = qobject_cast<export_::OptionsWidget*>(widget) != nullptr;
+  filterOptions->setMinimumHeight(0);
+  filterOptions->setMaximumHeight(QWIDGETSIZE_MAX);
+  if (hasIndependentScroller) {
+    // Export intentionally disables horizontal scrolling. Its runtime compact
+    // minimum must therefore be satisfied by the dock itself; otherwise the
+    // outer viewport silently clips the footer and primary action on the
+    // right. Include the dock/layout chrome already visible around the
+    // viewport, then restore the normal minimum for every other stage.
+    const int dockChromeWidth = qMax(0, filterDockWidget->width() - scrollArea->viewport()->width());
+    filterDockWidget->setMinimumWidth(
+        qMax(m_filterDockBaseMinimumWidth, widget->minimumWidth() + dockChromeWidth));
+  } else {
+    filterDockWidget->setMinimumWidth(m_filterDockBaseMinimumWidth);
+  }
+  if (hasIndependentScroller && scrollArea->viewport()->height() > 0) {
+    filterOptions->setFixedHeight(
+        qMax(scrollArea->viewport()->height(), m_optionsWidget->minimumSizeHint().height()));
+  }
 
   // We use an asynchronous connection here, because the slot
   // will probably delete the options panel, which could be
@@ -2960,9 +3022,36 @@ void MainWindow::exportToPdfFromFilter() {
     QString message =
         tr("Successfully exported %1 pages to PDF.\nFile size: %2").arg(outputFiles.size()).arg(sizeStr);
 
-    // Optionally push the book + PDF into the locally running Zotero app.
+    export_::OptionsWidget* exportOptions = m_stages->exportFilter()->optionsWidget();
+    if (exportOptions->returnToZoteroEnabled()) {
+      const ZoteroLoopSidecar sidecar = *exportOptions->zoteroLoopSidecar();
+      exportOptions->setZoteroReturnStatus(tr("Zotero: returning exported PDF…"));
+      QPointer<export_::OptionsWidget> optionsGuard(exportOptions);
+      auto* zotero = new ZoteroClient(this);
+      zotero->returnAttachmentAsync(
+          sidecar.returnUrl, sidecar.token, sidecar.itemKey, pdfPath,
+          [this, zotero, optionsGuard, pdfPath, message](ZoteroClient::Result result) mutable {
+            if (result.ok()) {
+              message += tr("\n\nReturned to Zotero as attachment %1.").arg(result.attachmentKey);
+              if (optionsGuard) {
+                optionsGuard->setZoteroReturnStatus(
+                    tr("Zotero: returned as attachment %1").arg(result.attachmentKey));
+              }
+            } else {
+              message += tr("\n\nZotero: %1").arg(result.message);
+              if (optionsGuard) {
+                optionsGuard->setZoteroReturnStatus(tr("Zotero: %1").arg(result.message));
+              }
+            }
+            showExportSuccessDialog(this, pdfPath, message);
+            zotero->deleteLater();
+          });
+      return;
+    }
+
+    // Non-loop projects retain the existing generic Zotero item creation path.
     // Export success is never gated on Zotero; failures are soft and informational.
-    if (exportSettings->sendToZotero()) {
+    if (!exportOptions->isZoteroLoopProject() && exportSettings->sendToZotero()) {
       ZoteroClient zotero;
       const ZoteroClient::Result result =
           zotero.sendBookWithAttachment(meta, static_cast<int>(outputFiles.size()), pdfPath);
@@ -3100,6 +3189,10 @@ void MainWindow::newProjectCreated(ProjectCreationContext* context) {
 }
 
 void MainWindow::importPdfFile(const QString& pdfPath) {
+  importPdfFileToProject(pdfPath, QString());
+}
+
+bool MainWindow::importPdfFileToProject(const QString& pdfPath, const QString& projectDirectory) {
   // Load PDF metadata to get page count and sizes
   std::vector<ImageFileInfo> files;
   const ImageMetadataLoader::Status status = ImageMetadataLoader::load(pdfPath, [&](const ImageMetadata& metadata) {
@@ -3108,7 +3201,7 @@ void MainWindow::importPdfFile(const QString& pdfPath) {
 
   if (status != ImageMetadataLoader::LOADED || files.empty()) {
     QMessageBox::warning(this, tr("Error"), tr("Failed to load PDF file."));
-    return;
+    return false;
   }
 
   // Consolidate all pages into a single file entry with multiple pages
@@ -3134,6 +3227,24 @@ void MainWindow::importPdfFile(const QString& pdfPath) {
   if (m_stages && m_stages->outputFilter()) {
     m_stages->outputFilter()->setDefaultDpi(Dpi(importDpi, importDpi));
   }
+
+  if (projectDirectory.isEmpty()) {
+    return true;
+  }
+
+  if (!saveProjectToFolder(projectDirectory)) {
+    return false;
+  }
+
+  m_projectFolderPath = QFileInfo(projectDirectory).absoluteFilePath();
+  m_projectFile = ProjectFolder(m_projectFolderPath).projectFilePath();
+  m_projectSavedToFolder = true;
+  updateWindowTitle();
+
+  // Re-open the freshly written file through the normal project reader so the
+  // launch path and a later resume have identical in-memory state.
+  openProject(m_projectFile);
+  return true;
 }
 
 void MainWindow::startBenchmarkAutoProcess() {
@@ -3290,6 +3401,10 @@ void MainWindow::showAboutDialog() {
   dialog->show();
 }
 
+void MainWindow::revealZoteroPlugin() {
+  ZoteroPluginInstaller::reveal(this);
+}
+
 /**
  * This function is called asynchronously, always from the main thread.
  */
@@ -3325,6 +3440,9 @@ void MainWindow::removeFilterOptionsWidget() {
   m_optionsWidgetCleanup.clear();
 
   m_optionsWidget = nullptr;
+  filterOptions->setMinimumHeight(0);
+  filterOptions->setMaximumHeight(QWIDGETSIZE_MAX);
+  filterDockWidget->setMinimumWidth(m_filterDockBaseMinimumWidth);
 }
 
 void MainWindow::updateProjectActions() {
@@ -4226,7 +4344,7 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
     const bool shiftPressed = event->modifiers() & Qt::ShiftModifier;
     const QString text = event->text().toLower();
 
-    // Shift+C/G/B: Toggle page filter buttons
+    // Shift+C/M/G/B: Toggle page filter buttons
     if (shiftPressed) {
       if (text == "c") {
         filterColorBtn->toggle();
@@ -4234,6 +4352,10 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
         return;
       } else if (text == "g") {
         filterGrayBtn->toggle();
+        event->accept();
+        return;
+      } else if (text == "m") {
+        filterMixedBtn->toggle();
         event->accept();
         return;
       } else if (text == "b") {
@@ -4384,12 +4506,12 @@ PageSequence MainWindow::currentPageSequence() {
   }
 
   // Apply color mode filter if any filter button is unchecked
-  const bool showBw = filterBwBtn->isChecked();
-  const bool showGray = filterGrayBtn->isChecked();
-  const bool showColor = filterColorBtn->isChecked();
+  const finalize::ThumbnailColorModeFilter colorModeFilter(
+      filterBwBtn->isChecked(), filterGrayBtn->isChecked(), filterMixedBtn->isChecked(),
+      filterColorBtn->isChecked());
 
   // If all filters are on, no filtering needed
-  if (showBw && showGray && showColor) {
+  if (colorModeFilter.includesAll()) {
     return pageSequence;
   }
 
@@ -4406,20 +4528,7 @@ PageSequence MainWindow::currentPageSequence() {
   PageSequence filteredSequence;
   for (const PageInfo& pageInfo : pageSequence) {
     finalize::ColorMode colorMode = finalizeSettings->getColorMode(pageInfo.id());
-    bool include = false;
-    switch (colorMode) {
-      case finalize::ColorMode::BlackAndWhite:
-        include = showBw;
-        break;
-      case finalize::ColorMode::Grayscale:
-        include = showGray;
-        break;
-      case finalize::ColorMode::Mixed:
-      case finalize::ColorMode::Color:
-        include = showColor;
-        break;
-    }
-    if (include) {
+    if (colorModeFilter.includes(colorMode)) {
       filteredSequence.append(pageInfo);
     }
   }

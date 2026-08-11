@@ -7,6 +7,7 @@
 #include <QString>
 
 #include <memory>
+#include <optional>
 #include <set>
 
 #include "Dpi.h"
@@ -14,9 +15,11 @@
 #include "PageId.h"
 #include "PageSelectionAccessor.h"
 #include "Settings.h"
+#include "ZoteroLoopSidecar.h"
 #include "ui_OptionsWidget.h"
 
 class QTimer;
+class QResizeEvent;
 
 namespace ocr {
 class Settings;
@@ -42,6 +45,12 @@ class OptionsWidget : public FilterOptionsWidget, private Ui::ExportOptionsWidge
 
   void setOcrSettings(std::shared_ptr<ocr::Settings> ocrSettings);
 
+  void setProjectFilePath(const QString& projectFilePath);
+  bool isZoteroLoopProject() const { return m_zoteroLoopSidecar.has_value(); }
+  bool returnToZoteroEnabled() const;
+  const std::optional<ZoteroLoopSidecar>& zoteroLoopSidecar() const { return m_zoteroLoopSidecar; }
+  void setZoteroReturnStatus(const QString& statusText);
+
   void preUpdateUI(const PageInfo& pageInfo);
   void postUpdateUI(const PageId& pageId);
 
@@ -49,8 +58,10 @@ class OptionsWidget : public FilterOptionsWidget, private Ui::ExportOptionsWidge
   void exportToPdfRequested();
 
  protected:
+  bool eventFilter(QObject* watched, QEvent* event) override;
   void showEvent(QShowEvent* event) override;
   void hideEvent(QHideEvent* event) override;
+  void resizeEvent(QResizeEvent* event) override;
 
  private slots:
   void noDpiLimitChanged(bool checked);
@@ -73,6 +84,7 @@ class OptionsWidget : public FilterOptionsWidget, private Ui::ExportOptionsWidge
   void populateRoleCombo();
   void updateGuessButtonState();
   void refreshZoteroStatus();
+  void updateZoteroCheckboxText();
   // Looks up isbn online and overwrites metadata fields with any non-empty
   // canonical values (keeping the isbn). Returns false on empty isbn or lookup
   // failure; the caller shows any message.
@@ -89,6 +101,8 @@ class OptionsWidget : public FilterOptionsWidget, private Ui::ExportOptionsWidge
   // Carries the last lookup's Result message from applyIsbnLookup to the slot
   // that decides how to present the failure.
   QString m_lastLookupMessage;
+  std::optional<ZoteroLoopSidecar> m_zoteroLoopSidecar;
+  bool m_hasZoteroReturnStatus = false;
 };
 }  // namespace export_
 

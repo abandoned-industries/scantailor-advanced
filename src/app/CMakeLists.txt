@@ -24,6 +24,7 @@ set(gui_only_sources
     ProjectFilesDialog.cpp ProjectFilesDialog.h
     NewOpenProjectPanel.cpp NewOpenProjectPanel.h
     StartupWindow.cpp StartupWindow.h
+    ZoteroPluginInstaller.cpp ZoteroPluginInstaller.h
     AppController.cpp AppController.h
     SystemLoadWidget.cpp SystemLoadWidget.h
     MainWindow.cpp MainWindow.h
@@ -163,6 +164,21 @@ if(APPLE)
     set(SCANTAILOR_BUNDLE_PLUGINS_DIR "${SCANTAILOR_BUNDLE_CONTENTS_DIR}/PlugIns")
     set(SCANTAILOR_BUNDLE_SIGNATURE_DIR "${SCANTAILOR_BUNDLE_CONTENTS_DIR}/_CodeSignature")
     set(SCANTAILOR_BUNDLE_QT_CONF "${SCANTAILOR_BUNDLE_CONTENTS_DIR}/Resources/qt.conf")
+    set(SCANTAILOR_README_PDF "${CMAKE_SOURCE_DIR}/ScanTailor Spectre Readme.pdf")
+    set(SCANTAILOR_BUNDLED_README_PDF
+        "${SCANTAILOR_BUNDLE_CONTENTS_DIR}/Resources/ScanTailor Spectre Readme.pdf")
+    set(SCANTAILOR_ZOTERO_PLUGIN_MANIFEST
+        "${CMAKE_SOURCE_DIR}/zotero-plugin/manifest.json")
+    set(SCANTAILOR_ZOTERO_PLUGIN_XPI
+        "${CMAKE_SOURCE_DIR}/zotero-plugin/dist/st-spectre-loop.xpi")
+    set(SCANTAILOR_BUNDLED_ZOTERO_PLUGIN_XPI
+        "${SCANTAILOR_BUNDLE_CONTENTS_DIR}/Resources/st-spectre-loop.xpi")
+    set(SCANTAILOR_ZOTERO_PLUGIN_BUILD_SCRIPT
+        "${CMAKE_SOURCE_DIR}/zotero-plugin/build.sh")
+    set(SCANTAILOR_ZOTERO_PLUGIN_VALIDATOR
+        "${CMAKE_SOURCE_DIR}/cmake/ValidateZoteroPlugin.cmake")
+    set(SCANTAILOR_ADHOC_SIGN_SCRIPT
+        "${CMAKE_SOURCE_DIR}/packaging/macos/sign-adhoc.sh")
 
     add_custom_target(scantailor_bundle
       COMMAND ${CMAKE_COMMAND} -E rm -rf "${SCANTAILOR_BUNDLE_FRAMEWORKS_DIR}"
@@ -174,8 +190,22 @@ if(APPLE)
         -always-overwrite
       COMMAND /bin/bash "${CMAKE_SOURCE_DIR}/packaging/macos/fix-bundle-libs.sh" "${SCANTAILOR_BUNDLE_DIR}"
       ${SCANTAILOR_DOCUMENT_OCR_BUNDLE_COMMAND}
-      COMMAND codesign --force --deep --sign - "${SCANTAILOR_BUNDLE_DIR}"
-      DEPENDS scantailor
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SCANTAILOR_README_PDF}"
+        "${SCANTAILOR_BUNDLED_README_PDF}"
+      COMMAND ${CMAKE_COMMAND}
+        "-DSOURCE_MANIFEST=${SCANTAILOR_ZOTERO_PLUGIN_MANIFEST}"
+        "-DXPI_PATH=${SCANTAILOR_ZOTERO_PLUGIN_XPI}"
+        "-DBUILD_SCRIPT=${SCANTAILOR_ZOTERO_PLUGIN_BUILD_SCRIPT}"
+        -P "${SCANTAILOR_ZOTERO_PLUGIN_VALIDATOR}"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SCANTAILOR_ZOTERO_PLUGIN_XPI}"
+        "${SCANTAILOR_BUNDLED_ZOTERO_PLUGIN_XPI}"
+      COMMAND /bin/bash "${SCANTAILOR_ADHOC_SIGN_SCRIPT}" "${SCANTAILOR_BUNDLE_DIR}"
+      DEPENDS scantailor "${SCANTAILOR_README_PDF}"
+        "${SCANTAILOR_ZOTERO_PLUGIN_MANIFEST}"
+        "${SCANTAILOR_ZOTERO_PLUGIN_VALIDATOR}"
+        "${SCANTAILOR_ADHOC_SIGN_SCRIPT}"
       COMMENT "Bundling Qt frameworks and ad-hoc signing the app bundle..."
       VERBATIM
     )

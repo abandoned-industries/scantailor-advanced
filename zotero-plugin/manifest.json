@@ -1,0 +1,15 @@
+{
+  "manifest_version": 2,
+  "name": "ScanTailor Spectre Loop",
+  "version": "0.1.2",
+  "description": "Stages Zotero PDFs for cleaning in ScanTailor Spectre and attaches returned scans to their original items.",
+  "author": "Kazys Varnelis",
+  "applications": {
+    "zotero": {
+      "id": "st-spectre-loop@kazys.local",
+      "strict_min_version": "9.0",
+      "strict_max_version": "9.*",
+      "update_url": "https://example.invalid/st-spectre-loop/update.json"
+    }
+  }
+}

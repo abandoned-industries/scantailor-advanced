@@ -42,7 +42,9 @@ class Settings {
 
   // Send the exported book to Zotero after export
   bool sendToZotero() const;
-  void setSendToZotero(bool value);
+  bool hasExplicitSendToZoteroChoice() const;
+  void setSendToZotero(bool value, bool explicitChoice);
+  void armSendToZoteroForLoopProject();
 
  private:
   mutable QMutex m_mutex;
@@ -52,6 +54,7 @@ class Settings {
   PdfExporter::Quality m_quality;
   BookMetadata m_bookMetadata;
   bool m_sendToZotero = false;
+  bool m_hasExplicitSendToZoteroChoice = false;
 };
 
 }  // namespace export_

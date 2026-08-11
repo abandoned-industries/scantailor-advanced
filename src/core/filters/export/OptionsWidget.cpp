@@ -4,9 +4,14 @@
 #include "OptionsWidget.h"
 
 #include <QApplication>
+#include <QDebug>
+#include <QEvent>
+#include <QFontMetrics>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QResizeEvent>
 #include <QSignalBlocker>
+#include <QStyle>
 #include <QTimer>
 
 #include "ApplicationSettings.h"
@@ -34,6 +39,32 @@ OptionsWidget::OptionsWidget(std::shared_ptr<Settings> settings, const PageSelec
   populateQualityCombo();
   populateRoleCombo();
 
+  // QLineEdit's default size hint and QFormLayout's platform-dependent field
+  // growth policy otherwise propagate a wide content hint through the inner
+  // scroll area.  These fields are intentionally allowed to become compact;
+  // text editing remains usable because QLineEdit scrolls its contents.
+  metadataFormLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+  for (QWidget* field : {static_cast<QWidget*>(titleLineEdit), static_cast<QWidget*>(authorsLineEdit),
+                         static_cast<QWidget*>(roleCombo), static_cast<QWidget*>(yearLineEdit),
+                         static_cast<QWidget*>(publisherLineEdit), static_cast<QWidget*>(placeLineEdit),
+                         static_cast<QWidget*>(isbnLineEdit), static_cast<QWidget*>(languageLineEdit)}) {
+    field->setMinimumWidth(24);
+    field->setSizePolicy(QSizePolicy::Expanding, field->sizePolicy().verticalPolicy());
+  }
+  roleCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+  roleCombo->setMinimumContentsLength(4);
+
+  // The scroll area's content size hint must not establish a hidden horizontal
+  // overflow width when horizontal scrolling is disabled.
+  settingsScrollContents->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  settingsScrollArea->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+  for (QLabel* label : {zoteroPluginWarningLabel, zoteroStatusLabel}) {
+    label->setMinimumWidth(0);
+    label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  }
+  sendToZoteroCB->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+  sendToZoteroCB->installEventFilter(this);
+
   // Connect UI signals
   connect(noDpiLimitCB, &QCheckBox::toggled, this, &OptionsWidget::noDpiLimitChanged);
   connect(maxDpiSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &OptionsWidget::maxDpiChanged);
@@ -59,6 +90,20 @@ OptionsWidget::OptionsWidget(std::shared_ptr<Settings> settings, const PageSelec
   connect(m_zoteroPollTimer, &QTimer::timeout, this, &OptionsWidget::refreshZoteroStatus);
 
   updateDisplay();
+
+  // Preserve complete non-elidable controls (notably the PDF settings
+  // checkboxes) by including their now-compact content minimum and the width a
+  // vertical scrollbar consumes.  The long Zotero item title is excluded via
+  // the ignored policy above and is elided dynamically instead.
+  settingsScrollLayout->activate();
+  const QMargins panelMargins = verticalLayout->contentsMargins();
+  const int scrollbarWidth = style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, settingsScrollArea);
+  const int styleFrameAllowance = 4 * style()->pixelMetric(QStyle::PM_DefaultFrameWidth, nullptr,
+                                                           settingsScrollArea);
+  const int settingsMinimumWidth = settingsScrollContents->minimumSizeHint().width()
+                                   + panelMargins.left() + panelMargins.right() + scrollbarWidth
+                                   + styleFrameAllowance;
+  setMinimumWidth(qMax(250, settingsMinimumWidth));
 }
 
 OptionsWidget::~OptionsWidget() = default;
@@ -72,6 +117,84 @@ void OptionsWidget::setOcrSettings(std::shared_ptr<ocr::Settings> ocrSettings) {
   // sequence exists — must not touch m_pageSelectionAccessor here. The guess
   // button state is refreshed by updateDisplay() on preUpdateUI.
   m_ocrSettings = std::move(ocrSettings);
+}
+
+void OptionsWidget::setProjectFilePath(const QString& projectFilePath) {
+  m_zoteroLoopSidecar = projectFilePath.isEmpty()
+                              ? std::optional<ZoteroLoopSidecar>()
+                              : ZoteroLoopSidecar::discover(projectFilePath);
+  m_hasZoteroReturnStatus = false;
+  if (m_zoteroLoopSidecar) {
+    const QString foundVersion = m_zoteroLoopSidecar->pluginVersion;
+    const QString minimumVersion = QString::fromLatin1(ZoteroLoopSidecar::MINIMUM_SUPPORTED_PLUGIN_VERSION);
+    qInfo().noquote() << "Zotero loop project plugin version:"
+                      << (foundVersion.isEmpty() ? QStringLiteral("none") : foundVersion);
+    m_settings->armSendToZoteroForLoopProject();
+    const QSignalBlocker blocker(sendToZoteroCB);
+    sendToZoteroCB->setChecked(m_settings->sendToZotero());
+    updateZoteroCheckboxText();
+    const bool pluginIsOutOfDate =
+        foundVersion.isEmpty()
+        || ZoteroLoopSidecar::pluginVersionIsOlderThan(foundVersion, minimumVersion);
+    if (pluginIsOutOfDate) {
+      if (foundVersion.isEmpty()) {
+        zoteroPluginWarningLabel->setText(
+            tr("Your Zotero plugin is out of date — update ScanTailor Spectre Loop to %1 or newer (Help ▸ Install Zotero Plugin…).")
+                .arg(minimumVersion));
+      } else {
+        zoteroPluginWarningLabel->setText(
+            tr("Zotero plugin %1 is out of date — update ScanTailor Spectre Loop to %2 or newer (Help ▸ Install Zotero Plugin…).")
+                .arg(foundVersion, minimumVersion));
+      }
+    }
+    zoteroPluginWarningLabel->setVisible(pluginIsOutOfDate);
+    zoteroStatusLabel->setText(tr("Zotero round-trip project"));
+  } else {
+    zoteroPluginWarningLabel->setVisible(false);
+    sendToZoteroCB->setText(tr("Send to Zotero after export"));
+    sendToZoteroCB->setToolTip(QString());
+    zoteroStatusLabel->setText(tr("Zotero: checking…"));
+  }
+}
+
+void OptionsWidget::resizeEvent(QResizeEvent* event) {
+  FilterOptionsWidget::resizeEvent(event);
+  updateZoteroCheckboxText();
+}
+
+bool OptionsWidget::eventFilter(QObject* watched, QEvent* event) {
+  if (watched == sendToZoteroCB && event->type() == QEvent::Resize) {
+    updateZoteroCheckboxText();
+  }
+  return FilterOptionsWidget::eventFilter(watched, event);
+}
+
+void OptionsWidget::updateZoteroCheckboxText() {
+  if (!m_zoteroLoopSidecar) {
+    return;
+  }
+
+  const QString prefix = tr("Return to Zotero: ");
+  const QString title = m_zoteroLoopSidecar->itemTitle;
+  sendToZoteroCB->setToolTip(title);
+
+  const QFontMetrics metrics(sendToZoteroCB->font());
+  const int indicatorWidth = sendToZoteroCB->style()->pixelMetric(QStyle::PM_IndicatorWidth, nullptr,
+                                                                  sendToZoteroCB);
+  const int labelSpacing = sendToZoteroCB->style()->pixelMetric(QStyle::PM_CheckBoxLabelSpacing, nullptr,
+                                                                sendToZoteroCB);
+  const int titleWidth = qMax(0, sendToZoteroCB->contentsRect().width() - indicatorWidth - labelSpacing
+                                    - metrics.horizontalAdvance(prefix));
+  sendToZoteroCB->setText(prefix + metrics.elidedText(title, Qt::ElideRight, titleWidth));
+}
+
+bool OptionsWidget::returnToZoteroEnabled() const {
+  return m_zoteroLoopSidecar.has_value() && m_settings->sendToZotero();
+}
+
+void OptionsWidget::setZoteroReturnStatus(const QString& statusText) {
+  m_hasZoteroReturnStatus = true;
+  zoteroStatusLabel->setText(statusText);
 }
 
 void OptionsWidget::showEvent(QShowEvent* event) {
@@ -198,7 +321,7 @@ void OptionsWidget::metadataEditingFinished() {
 }
 
 void OptionsWidget::sendToZoteroToggled(bool checked) {
-  m_settings->setSendToZotero(checked);
+  m_settings->setSendToZotero(checked, true);
 }
 
 void OptionsWidget::recommendedNameToggled(bool checked) {
@@ -299,9 +422,14 @@ void OptionsWidget::lookupIsbnClicked() {
 }
 
 void OptionsWidget::refreshZoteroStatus() {
+  if (m_hasZoteroReturnStatus) {
+    return;
+  }
   zoteroStatusLabel->setText(tr("Zotero: checking…"));
   m_zoteroClient->pingAsync([this](bool running) {
-    zoteroStatusLabel->setText(running ? tr("Zotero: running") : tr("Zotero: not running"));
+    if (!m_hasZoteroReturnStatus) {
+      zoteroStatusLabel->setText(running ? tr("Zotero: running") : tr("Zotero: not running"));
+    }
   });
 }
 

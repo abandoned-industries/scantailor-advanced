@@ -9,7 +9,7 @@ set(sources
     OptionsWidget.cpp OptionsWidget.h
     Task.cpp Task.h
     CacheDrivenTask.cpp CacheDrivenTask.h
-    Settings.cpp Settings.h AutoColorModePolicy.h
+    Settings.cpp Settings.h AutoColorModePolicy.h ThumbnailColorModeFilter.h
     AutoColorDecisionReset.cpp AutoColorDecisionReset.h
     Thumbnail.cpp Thumbnail.h)
 

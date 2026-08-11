@@ -1,0 +1,153 @@
+<?xml version="1.0"?>
+<?xml-stylesheet href="chrome://global/skin/global.css"?>
+<?xml-stylesheet href="chrome://zotero/skin/zotero.css"?>
+
+<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
+        id="st-spectre-loop-dialog"
+        title="ScanTailor Spectre Loop"
+        width="620"
+        height="330"
+        onload="STSpectreLoopDialog.init()"
+        onclose="STSpectreLoopDialog.cancel()">
+  <script src="chrome://st-spectre-loop/content/dialog.js" />
+  <html:style>
+    :root {
+      color-scheme: light dark;
+      font: message-box;
+    }
+
+    .dialog-shell {
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      width: 100vw;
+      height: 100vh;
+      min-width: 0;
+      overflow: hidden;
+      padding: 22px 24px 18px;
+      color: CanvasText;
+      background: Canvas;
+    }
+
+    .dialog-title {
+      flex: none;
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 600;
+      line-height: 1.35;
+    }
+
+    .details {
+      display: grid;
+      flex: none;
+      grid-template-columns: 118px minmax(0, 1fr);
+      row-gap: 12px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .field-label {
+      font-weight: 500;
+      line-height: 28px;
+      white-space: nowrap;
+    }
+
+    .field-value,
+    .source-select {
+      box-sizing: border-box;
+      display: block;
+      min-width: 0;
+      width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .field-value {
+      line-height: 28px;
+    }
+
+    .source-select {
+      height: 28px;
+    }
+
+    .source-select[hidden],
+    .field-value[hidden] {
+      display: none;
+    }
+
+    .workspace-field {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    button {
+      min-width: 88px;
+      min-height: 30px;
+      padding: 4px 14px;
+      font: inherit;
+    }
+
+    #change-workspace {
+      min-width: 82px;
+    }
+
+    .error-message {
+      box-sizing: border-box;
+      flex: none;
+      max-height: 48px;
+      min-height: 0;
+      margin: 0;
+      overflow: auto;
+      color: #b00020;
+      line-height: 1.35;
+      white-space: pre-wrap;
+    }
+
+    .error-message[hidden] {
+      display: none;
+    }
+
+    .dialog-actions {
+      display: flex;
+      flex: none;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: auto;
+    }
+  </html:style>
+
+  <html:main class="dialog-shell">
+    <html:h1 class="dialog-title">Send a PDF to ScanTailor Spectre</html:h1>
+
+    <html:section class="details" aria-label="Scan details">
+      <html:div class="field-label">Zotero item:</html:div>
+      <html:div id="item-title" class="field-value" title=""></html:div>
+
+      <html:div class="field-label">Source PDF:</html:div>
+      <html:div id="source-field" class="field-value">
+        <html:span id="source-label" class="field-value" title=""></html:span>
+        <html:select id="source-picker" class="source-select" hidden="hidden"
+                     aria-label="Source PDF"></html:select>
+      </html:div>
+
+      <html:div class="field-label">Projects folder:</html:div>
+      <html:div class="workspace-field">
+        <html:span id="workspace-path" class="field-value" title=""></html:span>
+        <html:button id="change-workspace" type="button">Change…</html:button>
+      </html:div>
+    </html:section>
+
+    <html:p id="error-message" class="error-message" role="alert" hidden="hidden"></html:p>
+
+    <html:footer class="dialog-actions">
+      <html:button id="cancel" type="button">Cancel</html:button>
+      <html:button id="clean" type="button" disabled="disabled">Clean Scan</html:button>
+    </html:footer>
+  </html:main>
+</window>

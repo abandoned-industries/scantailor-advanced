@@ -46,6 +46,80 @@ ZoteroClient::ZoteroClient(QObject* parent)
 
 ZoteroClient::~ZoteroClient() = default;
 
+void ZoteroClient::returnAttachmentAsync(const QString& returnUrl,
+                                         const QString& token,
+                                         const QString& itemKey,
+                                         const QString& pdfPath,
+                                         std::function<void(Result)> callback,
+                                         int timeoutMs) {
+  QJsonObject payload;
+  payload.insert(QStringLiteral("itemKey"), itemKey);
+  payload.insert(QStringLiteral("filePath"), QFileInfo(pdfPath).absoluteFilePath());
+
+  QNetworkRequest request{QUrl(returnUrl)};
+  request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+  request.setRawHeader(kApiVersionHeader, kApiVersionValue);
+  request.setRawHeader("Authorization", QByteArray("Bearer ") + token.toUtf8());
+
+  QNetworkReply* reply = m_networkManager->post(
+      request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
+  auto* timer = new QTimer(reply);
+  timer->setSingleShot(true);
+  connect(timer, &QTimer::timeout, reply, [reply]() {
+    reply->setProperty("zoteroReturnTimedOut", true);
+    reply->abort();
+  });
+  connect(reply, &QNetworkReply::finished, this,
+          [reply, timer, callback = std::move(callback)]() mutable {
+            timer->stop();
+            Result result;
+            const int httpStatus =
+                reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            const QByteArray responseBody = reply->readAll();
+
+            if (reply->property("zoteroReturnTimedOut").toBool()) {
+              result = {Status::Timeout,
+                        tr("Zotero did not respond in time. The PDF was exported normally."), {}};
+            } else if (httpStatus == 200 && reply->error() == QNetworkReply::NoError) {
+              QJsonParseError parseError;
+              const QJsonDocument response = QJsonDocument::fromJson(responseBody, &parseError);
+              const QString attachmentKey = response.isObject()
+                                                ? response.object().value(QStringLiteral("attachmentKey")).toString()
+                                                : QString();
+              if (parseError.error == QJsonParseError::NoError && !attachmentKey.isEmpty()) {
+                result = {Status::Ok,
+                          tr("Returned to Zotero as attachment %1.").arg(attachmentKey),
+                          attachmentKey};
+              } else {
+                result = {Status::InvalidResponse,
+                          tr("Zotero returned an invalid success response. The PDF was exported normally."), {}};
+              }
+            } else if (httpStatus == 401) {
+              result = {Status::HttpError,
+                        tr("Zotero rejected the return token (HTTP 401). The PDF was exported normally."), {}};
+            } else if (httpStatus == 404) {
+              result = {Status::HttpError,
+                        tr("The original Zotero item was not found (HTTP 404). The PDF was exported normally."), {}};
+            } else if (httpStatus == 400) {
+              result = {Status::HttpError,
+                        tr("Zotero rejected the returned file or request (HTTP 400). The PDF was exported normally."), {}};
+            } else if (httpStatus > 0) {
+              result = {Status::HttpError,
+                        tr("Zotero rejected the return request (HTTP %1). The PDF was exported normally.")
+                            .arg(httpStatus), {}};
+            } else {
+              result = {Status::NotRunning,
+                        tr("Could not reach Zotero. The PDF was exported normally."), {}};
+            }
+
+            reply->deleteLater();
+            if (callback) {
+              callback(std::move(result));
+            }
+          });
+  timer->start(timeoutMs);
+}
+
 void ZoteroClient::pingAsync(std::function<void(bool)> callback) {
   QNetworkRequest request(endpoint("/connector/ping"));
   request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");

@@ -17,7 +17,7 @@ class TonalCurve {
   static QImage apply(const QImage& image,
                       double temp,        // -100 to +100
                       double tint,        // -100 to +100
-                      double exposure,    // -5.0 to +5.0
+                      double exposure,    // -1.0 to +1.0 f-stops
                       double contrast,    // -100 to +100
                       double highlights,  // -100 to +100
                       double shadows,     // -100 to +100

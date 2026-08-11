@@ -53,5 +53,31 @@ BOOST_AUTO_TEST_CASE(copy_output_preserves_pages_and_cache) {
               == QByteArray("updated page data"));
 }
 
+BOOST_AUTO_TEST_CASE(project_file_is_visible_even_with_trailing_directory_separator) {
+  QTemporaryDir temp;
+  BOOST_REQUIRE(temp.isValid());
+
+  const QString folderPath = QDir(temp.path()).filePath("Loop Project");
+  BOOST_REQUIRE(QDir().mkpath(folderPath));
+  const ProjectFolder project(folderPath + QDir::separator());
+
+  BOOST_CHECK(project.projectFilePath() == QDir(folderPath).filePath("Loop Project.ScanTailor"));
+}
+
+BOOST_AUTO_TEST_CASE(find_project_file_preserves_legacy_and_prefers_visible_name) {
+  QTemporaryDir temp;
+  BOOST_REQUIRE(temp.isValid());
+  const QDir folder(temp.path());
+
+  const QString hidden = folder.filePath(".ScanTailor");
+  BOOST_REQUIRE(writeFile(hidden, "hidden legacy project"));
+  BOOST_CHECK(ProjectFolder::findProjectFile(temp.path()) == hidden);
+  BOOST_CHECK(ProjectFolder::isValidProjectFolder(temp.path()));
+
+  const QString visible = folder.filePath(QFileInfo(temp.path()).fileName() + ".ScanTailor");
+  BOOST_REQUIRE(writeFile(visible, "visible project"));
+  BOOST_CHECK(ProjectFolder::findProjectFile(temp.path()) == visible);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 }  // namespace Tests

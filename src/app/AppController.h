@@ -14,6 +14,7 @@
 class StartupWindow;
 class MainWindow;
 class ProjectCreationContext;
+struct ZoteroLoopSidecar;
 
 class AppController : public QObject {
   Q_OBJECT
@@ -24,7 +25,7 @@ class AppController : public QObject {
 
   void start();
   void openProject(const QString& path);
-  void openPdfFile(const QString& pdfFile);
+  void openPdfFile(const QString& pdfFile, const QString& projectDirectory = QString());
 
  public slots:
   void showStartupWindow();
@@ -45,6 +46,7 @@ class AppController : public QObject {
   void connectMainWindow(MainWindow* window);
   void removeMainWindow(MainWindow* window);
   bool hasActiveMainWindows() const;
+  void openZoteroLoopDirectory(const QString& directory, const ZoteroLoopSidecar& sidecar);
 
   QPointer<StartupWindow> m_startupWindow;
   QList<QPointer<MainWindow>> m_mainWindows;

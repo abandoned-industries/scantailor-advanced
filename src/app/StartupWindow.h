@@ -29,6 +29,7 @@ class StartupWindow : public QWidget {
 
  private slots:
   void showAboutDialog();
+  void revealZoteroPlugin();
 
  private:
   NewOpenProjectPanel* m_panel;

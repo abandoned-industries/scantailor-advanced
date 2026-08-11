@@ -83,6 +83,8 @@ class Filter : public AbstractFilter {
 
   void setOcrSettings(std::shared_ptr<ocr::Settings> ocrSettings);
 
+  void setProjectFilePath(const QString& projectFilePath);
+
  private:
   std::shared_ptr<ProjectPages> m_pages;
   std::shared_ptr<Settings> m_settings;

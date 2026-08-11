@@ -110,6 +110,8 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
 
   void importPdfFile(const QString& pdfPath);
 
+  bool importPdfFileToProject(const QString& pdfPath, const QString& projectDirectory);
+
   void startBenchmarkAutoProcess();
 
   void createProjectFromFiles(const QString& inputDir,
@@ -227,6 +229,8 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
   void onSettingsChanged();
 
   void showAboutDialog();
+
+  void revealZoteroPlugin();
 
   void handleOutOfMemorySituation();
 
@@ -414,6 +418,7 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
   std::unique_ptr<ProcessingTaskQueue> m_interactiveQueue;
   QStackedLayout* m_imageFrameLayout;
   QStackedLayout* m_optionsFrameLayout;
+  int m_filterDockBaseMinimumWidth = 0;
   QPointer<FilterOptionsWidget> m_optionsWidget;
   QPointer<FixDpiDialog> m_fixDpiDialog;
   std::unique_ptr<TabbedDebugImages> m_tabbedDebugImages;
@@ -433,6 +438,7 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
   bool m_restoreGeometry;
   bool m_debug;
   bool m_closing;
+  bool m_closeEventPending;
   bool m_quitting;  // True when user explicitly wants to quit (Cmd+Q or Quit menu)
   bool m_twoPassBatchInProgress;  // True when running first pass (Page Layout) before Output
   int m_twoPassTargetFilter;      // The filter to run after first pass completes

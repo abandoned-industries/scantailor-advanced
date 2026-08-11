@@ -11,7 +11,7 @@
  *
  * Project folder layout:
  *   ProjectFolder/
- *   ├── project.ScanTailor   (XML project file)
+ *   ├── ProjectFolder.ScanTailor (XML project file)
  *   ├── originals/           (copies of input images)
  *   ├── cache/               (thumbnails, processing cache)
  *   └── output/              (processed output files)
@@ -51,6 +51,12 @@ class ProjectFolder {
    * Checks if a folder appears to be a valid project folder.
    */
   static bool isValidProjectFolder(const QString& path);
+
+  /**
+   * Finds a project file in a folder. Prefers the visible folder-named file,
+   * but accepts legacy project.ScanTailor and hidden .ScanTailor files.
+   */
+  static QString findProjectFile(const QString& path);
 
  private:
   static bool copyDirectoryContents(const QString& sourceDir, const QString& destinationDir);
