@@ -2,7 +2,7 @@
 
 <img width="256" height="256" alt="scantailor-spectre" src="https://github.com/user-attachments/assets/a3988c3d-d80e-4089-9418-2bd8302b4b63" />
 
-**Version 2.0b1** | macOS (Apple Silicon) | Requires macOS 15 or later
+**Version 2.0b2** | macOS (Apple Silicon) | Requires macOS 15 or later
 
 ScanTailor Spectre transforms raw scans into clean, publication-ready pages. Import a PDF or folder of images, process through a 10-stage workflow, and export a polished, searchable PDF.
 
@@ -450,6 +450,11 @@ Lastly, the first application I vibe-coded was a clone of the 1990s game Spectre
 The "spectre in the machine" draws on all of these. 
 
 ## Version History
+
+### Version 2.0b2
+
+- PDF import now accepts PDFs with junk bytes (such as a UTF-8 BOM) before the `%PDF` header, matching Preview's behavior; some Papers-imported PDFs previously failed with "Failed to read PDF file."
+- Right-clicking thumbnails in the Finalize and Output stages now offers **Convert to Black and White**, **Convert to Grayscale**, and **Convert to Color**, applying to all selected pages; the matching c/g/b keyboard shortcuts now also keep the Finalize mode display in sync.
 
 ### Version 2.0b1
 

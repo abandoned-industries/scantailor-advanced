@@ -4,6 +4,7 @@
 #include "PdfReader.h"
 
 #include <QDebug>
+#include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
 #include <QIODevice>
@@ -84,7 +85,14 @@ class PdfDocumentManager {
   }
 
   DocumentHandle acquire(const QString& filePath) {
-    for (int attempt = 0; attempt < 3; ++attempt) {
+    // Zotero stages a PDF and immediately asks LaunchServices to open its work
+    // directory.  On APFS the file can already have its final name and header
+    // while CoreGraphics still rejects that first, very early open.  Retry only
+    // files modified moments ago so malformed, settled PDFs still fail quickly.
+    constexpr int maxAttempts = 11;
+    constexpr qint64 recentFileWindowMs = 2000;
+    constexpr unsigned long retryDelayMs = 100;
+    for (int attempt = 0; attempt < maxAttempts; ++attempt) {
       const PdfDocumentKey key = pdfDocumentKey(filePath);
       {
         QMutexLocker lock(&m_mutex);
@@ -101,7 +109,15 @@ class PdfDocumentManager {
         loadedDocument = CGPDFDocumentCreateWithURL((__bridge CFURLRef)url);
       }
       if (!loadedDocument) {
-        qDebug() << "PdfReader: Failed to load PDF:" << key.canonicalPath;
+        const QFileInfo currentInfo(filePath);
+        const qint64 ageMs = currentInfo.lastModified().msecsTo(QDateTime::currentDateTime());
+        if (attempt + 1 < maxAttempts && ageMs >= 0 && ageMs <= recentFileWindowMs) {
+          qWarning() << "PdfReader: CoreGraphics rejected newly staged PDF; retrying:"
+                     << key.canonicalPath << "attempt" << attempt + 1 << "age ms" << ageMs;
+          QThread::msleep(retryDelayMs);
+          continue;
+        }
+        qWarning() << "PdfReader: Failed to load PDF:" << key.canonicalPath;
         return {};
       }
 
@@ -319,7 +335,7 @@ static int detectEffectiveDpi(CGPDFDocumentRef document, int samplePages = 5) {
 #endif  // Q_OS_MACOS
 
 bool PdfReader::checkMagic(const QByteArray& data) {
-  return data.size() >= 5 && data.startsWith("%PDF-");
+  return data.left(1024).indexOf("%PDF-") >= 0;
 }
 
 bool PdfReader::canRead(QIODevice& device) {
@@ -331,7 +347,7 @@ bool PdfReader::canRead(QIODevice& device) {
 
   const qint64 origPos = device.pos();
   device.seek(0);
-  const QByteArray header = device.read(5);
+  const QByteArray header = device.read(1024);
   device.seek(origPos);
 
   return checkMagic(header);
@@ -342,7 +358,7 @@ bool PdfReader::canRead(const QString& filePath) {
   if (!file.open(QIODevice::ReadOnly)) {
     return false;
   }
-  const QByteArray header = file.read(5);
+  const QByteArray header = file.read(1024);
   return checkMagic(header);
 }
 

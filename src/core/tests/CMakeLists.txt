@@ -8,6 +8,7 @@ set(sources
     TestOcrResult.cpp
     TestPageLayoutOutput.cpp
     TestPdfExporter.cpp
+    TestPdfReadError.cpp
     TestPdfReader.cpp
     TestPictureRegionMask.cpp
     TestPhotoAdjustments.cpp

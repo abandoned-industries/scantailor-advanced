@@ -14,6 +14,7 @@
 
 #include "MainWindow.h"
 #include "PdfImportDialog.h"
+#include "PdfReadError.h"
 #include "PdfReader.h"
 #include "ProjectCreationContext.h"
 #include "ProjectFolder.h"
@@ -68,7 +69,7 @@ void AppController::openPdfFile(const QString& pdfFile, const QString& projectDi
   // Read PDF info to get page count and detected DPI
   const PdfReader::PdfInfo pdfInfo = PdfReader::readPdfInfo(pdfFile);
   if (pdfInfo.pageCount == 0) {
-    QMessageBox::warning(nullptr, tr("Error"), tr("Failed to read PDF file."));
+    QMessageBox::warning(nullptr, tr("Error"), PdfReadError::message(pdfFile));
     return;
   }
 
@@ -240,7 +241,7 @@ void AppController::onImportPdfRequested() {
   // Read PDF info to get page count and detected DPI
   const PdfReader::PdfInfo pdfInfo = PdfReader::readPdfInfo(pdfFile);
   if (pdfInfo.pageCount == 0) {
-    QMessageBox::warning(m_startupWindow, tr("Error"), tr("Failed to read PDF file."));
+    QMessageBox::warning(m_startupWindow, tr("Error"), PdfReadError::message(pdfFile));
     return;
   }
 

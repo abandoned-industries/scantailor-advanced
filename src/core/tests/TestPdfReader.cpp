@@ -4,6 +4,7 @@
 #include <ImageLoader.h>
 #include <PdfReader.h>
 
+#include <QBuffer>
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
@@ -13,7 +14,9 @@
 #include <QSemaphore>
 #include <QString>
 #include <QTemporaryDir>
+#include <algorithm>
 #include <boost/test/unit_test.hpp>
+#include <chrono>
 #include <cstring>
 #include <thread>
 #include <vector>
@@ -36,6 +39,75 @@ bool writeTestPdf(const QString& path, const QSizeF& pageSize, const QString& ti
 }
 
 BOOST_AUTO_TEST_SUITE(PdfReaderTestSuite)
+
+BOOST_AUTO_TEST_CASE(pdfHeaderMayAppearWithinFirst1024Bytes) {
+  struct TestCase {
+    QByteArray data;
+    bool expected;
+  };
+
+  const std::vector<TestCase> testCases{
+      {QByteArray::fromHex("efbbbf") + "%PDF-1.4\n", true},
+      {"%PDF-1.4\n", true},
+      {"not a PDF", false},
+      {QByteArray(1024, 'x') + "%PDF-1.4\n", false},
+  };
+
+  QTemporaryDir tempDir;
+  BOOST_REQUIRE(tempDir.isValid());
+
+  for (std::size_t i = 0; i < testCases.size(); ++i) {
+    QByteArray data = testCases[i].data;
+    QBuffer buffer(&data);
+    BOOST_REQUIRE(buffer.open(QIODevice::ReadOnly));
+    const qint64 originalPosition = std::min<qint64>(2, data.size());
+    BOOST_REQUIRE(buffer.seek(originalPosition));
+    BOOST_CHECK_EQUAL(PdfReader::canRead(buffer), testCases[i].expected);
+    BOOST_CHECK_EQUAL(buffer.pos(), originalPosition);
+
+    const QString path = tempDir.filePath(QStringLiteral("header-%1.pdf").arg(i));
+    QFile file(path);
+    BOOST_REQUIRE(file.open(QIODevice::WriteOnly));
+    BOOST_REQUIRE_EQUAL(file.write(data), data.size());
+    file.close();
+    BOOST_CHECK_EQUAL(PdfReader::canRead(path), testCases[i].expected);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(newlyStagedPdfIsRetriedUntilCopyCompletes) {
+  const QString sourcePath = QStringLiteral(SCANTAILOR_TEST_SOURCE_DIR "/ScanTailor Spectre Readme.pdf");
+  QFile source(sourcePath);
+  BOOST_REQUIRE(source.open(QIODevice::ReadOnly));
+  const QByteArray sourceData = source.readAll();
+  BOOST_REQUIRE(sourceData.startsWith("%PDF-"));
+  BOOST_REQUIRE(sourceData.size() > 4096);
+
+  QTemporaryDir tempDir;
+  BOOST_REQUIRE(tempDir.isValid());
+  const QString stagedPath = tempDir.filePath("staging.pdf");
+  QSemaphore headerWritten;
+  bool writerOk = false;
+  std::thread writer([&] {
+    QFile staged(stagedPath);
+    if (!staged.open(QIODevice::WriteOnly)
+        || staged.write(sourceData.constData(), 1024) != 1024
+        || !staged.flush()) {
+      headerWritten.release();
+      return;
+    }
+    headerWritten.release();
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    writerOk = staged.write(sourceData.constData() + 1024, sourceData.size() - 1024)
+        == sourceData.size() - 1024;
+    staged.close();
+  });
+
+  headerWritten.acquire();
+  const PdfReader::PdfInfo info = PdfReader::readPdfInfo(stagedPath);
+  writer.join();
+  BOOST_REQUIRE(writerOk);
+  BOOST_CHECK_GT(info.pageCount, 0);
+}
 
 BOOST_AUTO_TEST_CASE(concurrentRasterizationProducesIdenticalImages) {
   const QString pdfPath = QStringLiteral(SCANTAILOR_TEST_SOURCE_DIR "/ScanTailor Spectre Readme.pdf");

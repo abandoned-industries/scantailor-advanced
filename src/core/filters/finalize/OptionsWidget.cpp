@@ -130,7 +130,6 @@ void OptionsWidget::applyColorModeToSelectedPages(ColorMode mode) {
 
     // Also update output::Settings so the output filter uses this mode
     if (m_outputSettings) {
-      output::ColorParams colorParams;
       output::ColorMode outputMode;
       switch (mode) {
         case ColorMode::BlackAndWhite:
@@ -149,6 +148,9 @@ void OptionsWidget::applyColorModeToSelectedPages(ColorMode mode) {
           outputMode = output::COLOR;
           break;
       }
+      // Read-modify-write the page's existing ColorParams so we don't stomp
+      // its BW options, ColorCommonOptions, or photo adjustments.
+      output::ColorParams colorParams = m_outputSettings->getParams(pageId).colorParams();
       colorParams.setColorMode(outputMode);
       colorParams.setColorModeUserSet(true);
       m_outputSettings->setColorParams(pageId, colorParams);
@@ -200,7 +202,6 @@ void OptionsWidget::applyToConfirmed(const std::set<PageId>& pages) {
 
     // Also update output::Settings so the output filter uses this mode
     if (m_outputSettings) {
-      output::ColorParams colorParams;
       output::ColorMode outputMode;
       switch (mode) {
         case ColorMode::BlackAndWhite:
@@ -219,6 +220,9 @@ void OptionsWidget::applyToConfirmed(const std::set<PageId>& pages) {
           outputMode = output::COLOR;
           break;
       }
+      // Read-modify-write the page's existing ColorParams so we don't stomp
+      // its BW options, ColorCommonOptions, or photo adjustments.
+      output::ColorParams colorParams = m_outputSettings->getParams(pageId).colorParams();
       colorParams.setColorMode(outputMode);
       colorParams.setColorModeUserSet(true);
       m_outputSettings->setColorParams(pageId, colorParams);

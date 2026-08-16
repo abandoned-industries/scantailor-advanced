@@ -92,6 +92,7 @@
 #include "ScopedIncDec.h"
 #include "SettingsDialog.h"
 #include "PdfImportDialog.h"
+#include "PdfReadError.h"
 #include "PdfReader.h"
 #include "SkinnedButton.h"
 #include "SmartFilenameOrdering.h"
@@ -594,64 +595,17 @@ MainWindow::MainWindow(bool restoreGeometry)
   connect(filterMixedBtn, &QToolButton::toggled, this, updateColorModeFilter);
   connect(filterColorBtn, &QToolButton::toggled, this, updateColorModeFilter);
 
-  // Color mode keyboard shortcuts for Finalize and Output stages
-  // Helper to check if we're in Finalize or Output filter
-  auto isFinalizeOrOutputFilter = [this]() {
-    return m_stages &&
-           (m_curFilter == m_stages->finalizeFilterIdx() || m_curFilter == m_stages->outputFilterIdx());
-  };
-
-  // Helper to set color mode for selected pages (updates both Output and Finalize settings)
-  auto setColorModeForSelectedPages = [this](output::ColorMode mode) {
-    const std::set<PageId> pages = selectedPages();
-    if (!pages.empty() && m_stages) {
-      auto outputSettings = m_stages->outputFilter()->settings();
-      auto finalizeSettings = m_stages->finalizeFilter()->settings();
-
-      // Map output::ColorMode to finalize::ColorMode
-      finalize::ColorMode finalizeMode;
-      switch (mode) {
-        case output::BLACK_AND_WHITE:
-          finalizeMode = finalize::ColorMode::BlackAndWhite;
-          break;
-        case output::GRAYSCALE:
-          finalizeMode = finalize::ColorMode::Grayscale;
-          break;
-        case output::COLOR:
-        case output::MIXED:
-        default:
-          finalizeMode = finalize::ColorMode::Color;
-          break;
-      }
-
-      for (const PageId& pageId : pages) {
-        // Update Output settings
-        output::ColorParams colorParams = outputSettings->getParams(pageId).colorParams();
-        colorParams.setColorMode(mode);
-        colorParams.setColorModeUserSet(true);
-        outputSettings->setColorParams(pageId, colorParams);
-
-        // Update Finalize settings
-        finalizeSettings->setColorMode(pageId, finalizeMode);
-      }
-      for (const PageId& pageId : pages) {
-        m_thumbSequence->invalidateThumbnail(pageId);
-      }
-      reloadRequested();
-    }
-  };
-
   // c/g/b/p - Set color mode (Finalize & Output stages)
   auto* shortcutC = new QShortcut(QKeySequence("c"), this);
-  connect(shortcutC, &QShortcut::activated, this, [=]() {
+  connect(shortcutC, &QShortcut::activated, this, [this]() {
     if (isFinalizeOrOutputFilter()) setColorModeForSelectedPages(output::COLOR);
   });
   auto* shortcutG = new QShortcut(QKeySequence("g"), this);
-  connect(shortcutG, &QShortcut::activated, this, [=]() {
+  connect(shortcutG, &QShortcut::activated, this, [this]() {
     if (isFinalizeOrOutputFilter()) setColorModeForSelectedPages(output::GRAYSCALE);
   });
   auto* shortcutB = new QShortcut(QKeySequence("b"), this);
-  connect(shortcutB, &QShortcut::activated, this, [=]() {
+  connect(shortcutB, &QShortcut::activated, this, [this]() {
     if (isFinalizeOrOutputFilter()) setColorModeForSelectedPages(output::BLACK_AND_WHITE);
   });
   // Note: 'p' for pass-through is handled in keyPressEvent to avoid falling through to QMainWindow
@@ -1584,6 +1538,16 @@ void MainWindow::pageContextMenuRequested(const PageInfo& pageInfo_, const QPoin
 
   QAction* processFromHere = menu.addAction(iconProvider.getIcon("play"), tr("Process from here..."));
 
+  QAction* convertToBlackAndWhite = nullptr;
+  QAction* convertToGrayscale = nullptr;
+  QAction* convertToColor = nullptr;
+  if (isFinalizeOrOutputFilter()) {
+    menu.addSeparator();
+    convertToBlackAndWhite = menu.addAction(tr("Convert to Black and White"));
+    convertToGrayscale = menu.addAction(tr("Convert to Grayscale"));
+    convertToColor = menu.addAction(tr("Convert to Color"));
+  }
+
   QAction* action = menu.exec(screenPos);
   if (action == insBefore) {
     showInsertFileDialog(BEFORE, pageInfo.imageId());
@@ -1599,6 +1563,12 @@ void MainWindow::pageContextMenuRequested(const PageInfo& pageInfo_, const QPoin
     forcePageSplitLayout(page_split::AUTO_LAYOUT_TYPE);
   } else if (action == processFromHere) {
     startBatchProcessingFrom(pageInfo);
+  } else if (convertToBlackAndWhite && action == convertToBlackAndWhite) {
+    setColorModeForSelectedPages(output::BLACK_AND_WHITE);
+  } else if (convertToGrayscale && action == convertToGrayscale) {
+    setColorModeForSelectedPages(output::GRAYSCALE);
+  } else if (convertToColor && action == convertToColor) {
+    setColorModeForSelectedPages(output::COLOR);
   }
 }  // MainWindow::pageContextMenuRequested
 
@@ -3103,7 +3073,7 @@ void MainWindow::importPdf() {
   // Detect PDF info and show import dialog
   PdfReader::PdfInfo pdfInfo = PdfReader::readPdfInfo(pdfPath);
   if (pdfInfo.pageCount == 0) {
-    QMessageBox::warning(this, tr("Error"), tr("Failed to read PDF file."));
+    QMessageBox::warning(this, tr("Error"), PdfReadError::message(pdfPath));
     return;
   }
 
@@ -3482,6 +3452,11 @@ bool MainWindow::isOutputFilter(const int filterIdx) const {
   // Output filter and Export filter both require the same prerequisites
   // (pages must have content sizes determined through Page Layout processing)
   return filterIdx == m_stages->outputFilterIdx() || filterIdx == m_stages->exportFilterIdx();
+}
+
+bool MainWindow::isFinalizeOrOutputFilter() const {
+  return m_stages &&
+         (m_curFilter == m_stages->finalizeFilterIdx() || m_curFilter == m_stages->outputFilterIdx());
 }
 
 PageView MainWindow::getCurrentView() const {
@@ -4040,6 +4015,45 @@ void MainWindow::forcePageSplitLayout(page_split::LayoutType layoutType) {
   reloadRequested();
 }
 
+void MainWindow::setColorModeForSelectedPages(output::ColorMode mode) {
+  const std::set<PageId> pages = selectedPages();
+  if (!pages.empty() && m_stages) {
+    auto outputSettings = m_stages->outputFilter()->settings();
+    auto finalizeSettings = m_stages->finalizeFilter()->settings();
+
+    // Map output::ColorMode to finalize::ColorMode
+    finalize::ColorMode finalizeMode;
+    switch (mode) {
+      case output::BLACK_AND_WHITE:
+        finalizeMode = finalize::ColorMode::BlackAndWhite;
+        break;
+      case output::GRAYSCALE:
+        finalizeMode = finalize::ColorMode::Grayscale;
+        break;
+      case output::COLOR:
+      case output::MIXED:
+      default:
+        finalizeMode = finalize::ColorMode::Color;
+        break;
+    }
+
+    for (const PageId& pageId : pages) {
+      // Update Output settings
+      output::ColorParams colorParams = outputSettings->getParams(pageId).colorParams();
+      colorParams.setColorMode(mode);
+      colorParams.setColorModeUserSet(true);
+      outputSettings->setColorParams(pageId, colorParams);
+
+      // Update Finalize settings
+      finalizeSettings->setColorMode(pageId, finalizeMode);
+    }
+    for (const PageId& pageId : pages) {
+      m_thumbSequence->invalidateThumbnail(pageId);
+    }
+    reloadRequested();
+  }
+}
+
 /**
  * Note: insertImage(..., BEFORE, ImageId()) is legal and means inserting at the end.
  */
@@ -4337,10 +4351,7 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
 
   // Color mode shortcuts for Finalize (stage 6) and Output (stage 7) filters
   // Use text() for keyboard layout independence (Dvorak, etc.)
-  const bool isFinalizeOrOutput = m_stages &&
-      (m_curFilter == m_stages->finalizeFilterIdx() || m_curFilter == m_stages->outputFilterIdx());
-
-  if (isFinalizeOrOutput) {
+  if (isFinalizeOrOutputFilter()) {
     const bool shiftPressed = event->modifiers() & Qt::ShiftModifier;
     const QString text = event->text().toLower();
 
@@ -4379,22 +4390,7 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
       }
 
       if (validKey) {
-        // Apply to all selected pages
-        const std::set<PageId> pages = selectedPages();
-        if (!pages.empty()) {
-          auto outputSettings = m_stages->outputFilter()->settings();
-          for (const PageId& pageId : pages) {
-            output::ColorParams colorParams = outputSettings->getParams(pageId).colorParams();
-            colorParams.setColorMode(newMode);
-            colorParams.setColorModeUserSet(true);
-            outputSettings->setColorParams(pageId, colorParams);
-          }
-          // Invalidate thumbnails and reload
-          for (const PageId& pageId : pages) {
-            m_thumbSequence->invalidateThumbnail(pageId);
-          }
-          reloadRequested();
-        }
+        setColorModeForSelectedPages(newMode);
         event->accept();
         return;
       }

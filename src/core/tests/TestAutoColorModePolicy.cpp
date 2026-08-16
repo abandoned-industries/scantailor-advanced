@@ -7,6 +7,7 @@
 #include "filters/finalize/Settings.h"
 #include "filters/finalize/ThumbnailColorModeFilter.h"
 #include "filters/output/ColorParams.h"
+#include "filters/output/Settings.h"
 #include "LeptonicaDetector.h"
 
 BOOST_AUTO_TEST_SUITE(AutoColorModePolicyTestSuite)
@@ -159,6 +160,39 @@ BOOST_AUTO_TEST_CASE(force_preset_provenance_is_distinct_from_manual_choice) {
   manuallyChanged.setColorModeUserSet(true);
   BOOST_CHECK(manuallyChanged.isColorModeUserSet());
   BOOST_CHECK(!manuallyChanged.isColorModePresetSet());
+}
+
+BOOST_AUTO_TEST_CASE(manual_color_mode_change_preserves_sibling_color_params) {
+  output::Settings settings;
+  const PageId pageId(ImageId(QStringLiteral("/tmp/mode-change.tif"), 0));
+
+  output::ColorParams seeded;
+  seeded.setColorMode(output::MIXED);
+  output::BlackWhiteOptions bwOptions = seeded.blackWhiteOptions();
+  bwOptions.setThresholdAdjustment(7);
+  seeded.setBlackWhiteOptions(bwOptions);
+  output::ColorCommonOptions commonOptions = seeded.colorCommonOptions();
+  commonOptions.setFillMargins(!commonOptions.fillMargins());
+  seeded.setColorCommonOptions(commonOptions);
+  weasel::PhotoAdjustments adjustments = seeded.photoAdjustments();
+  adjustments.setExposure(0.25);
+  seeded.setPhotoAdjustments(adjustments);
+  settings.setColorParams(pageId, seeded);
+
+  // A manual mode change (Finalize combo, thumbnail menu, MainWindow helper)
+  // must read-modify-write the stored ColorParams rather than write a
+  // default-constructed one that stomps the sibling options.
+  output::ColorParams updated = settings.getParams(pageId).colorParams();
+  updated.setColorMode(output::BLACK_AND_WHITE);
+  updated.setColorModeUserSet(true);
+  settings.setColorParams(pageId, updated);
+
+  const output::ColorParams result = settings.getParams(pageId).colorParams();
+  BOOST_CHECK(result.colorMode() == output::BLACK_AND_WHITE);
+  BOOST_CHECK(result.isColorModeUserSet());
+  BOOST_CHECK(result.blackWhiteOptions().thresholdAdjustment() == 7);
+  BOOST_CHECK(result.colorCommonOptions().fillMargins() == commonOptions.fillMargins());
+  BOOST_CHECK(result.photoAdjustments() == adjustments);
 }
 
 BOOST_AUTO_TEST_CASE(clear_detection_cache_makes_every_seeded_page_undecided) {

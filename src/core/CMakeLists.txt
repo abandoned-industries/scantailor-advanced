@@ -51,6 +51,7 @@ set(common_sources
     TiffReader.cpp TiffReader.h
     TiffWriter.cpp TiffWriter.h
     PdfReader.mm PdfReader.h
+    PdfReadError.mm PdfReadError.h
     PdfExporter.mm PdfExporter.h
     BookMetadata.cpp BookMetadata.h
     BookLookup.cpp BookLookup.h
@@ -150,7 +151,7 @@ if(APPLE)
   set_source_files_properties(AppleVisionDetector.mm PROPERTIES
     COMPILE_FLAGS "-x objective-c++ -fobjc-arc"
     SKIP_PRECOMPILE_HEADERS ON)
-  set_source_files_properties(PdfReader.mm PdfExporter.mm PROPERTIES
+  set_source_files_properties(PdfReader.mm PdfReadError.mm PdfExporter.mm PROPERTIES
     COMPILE_FLAGS "-x objective-c++"
     SKIP_PRECOMPILE_HEADERS ON)
   # Find Apple frameworks

@@ -31,6 +31,7 @@
 #include "SelectedPage.h"
 #include "StatusBarPanel.h"
 #include "ThumbnailSequence.h"
+#include "filters/output/ColorParams.h"
 #include "filters/page_split/LayoutType.h"
 #include "ui_MainWindow.h"
 
@@ -299,6 +300,8 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
 
   bool isOutputFilter(int filterIdx) const;
 
+  bool isFinalizeOrOutputFilter() const;
+
   void toggleFullBleedForSelectedPages();
 
   PageView getCurrentView() const;
@@ -332,6 +335,8 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
   void showRemovePagesDialog(const std::set<PageId>& pages);
 
   void forcePageSplitLayout(page_split::LayoutType layoutType);
+
+  void setColorModeForSelectedPages(output::ColorMode mode);
 
   void insertImage(const ImageInfo& newImage, BeforeOrAfter beforeOrAfter, ImageId existing);
 
