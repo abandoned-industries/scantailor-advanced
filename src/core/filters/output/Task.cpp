@@ -61,8 +61,9 @@ bool writeOutputImage(const QString& filePath, const QImage& image, const Output
       return image.save(filePath, "PNG");
     case OutputImageFormat::TIFF:
     default:
-      // TiffWriter uses ApplicationSettings internally for compression
-      // The finalize settings compression is synced to ApplicationSettings when changed
+      // TiffWriter reads its compression from ApplicationSettings;
+      // finalize::Settings::setTiffCompression syncs the color-compression
+      // key there when the user changes the finalize control (QW4).
       return TiffWriter::writeImage(filePath, image);
   }
 }

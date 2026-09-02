@@ -26,11 +26,17 @@ set(gui_only_sources
     StartupWindow.cpp StartupWindow.h
     ZoteroPluginInstaller.cpp ZoteroPluginInstaller.h
     AppController.cpp AppController.h
+    AccessibilitySafeguard.cpp AccessibilitySafeguard.h
     SystemLoadWidget.cpp SystemLoadWidget.h
     MainWindow.cpp MainWindow.h
     main.cpp
     StatusBarPanel.cpp StatusBarPanel.h
     DefaultParamsDialog.cpp DefaultParamsDialog.h
+    AutoAccept.cpp AutoAccept.h
+    BenchmarkLog.cpp BenchmarkLog.h
+    BatchSummaries.cpp BatchSummaries.h
+    PdfExportFlow.cpp PdfExportFlow.h
+    TempOutputCleanup.cpp TempOutputCleanup.h
     BatchProcessingSummaryDialog.cpp BatchProcessingSummaryDialog.h
     ContentCoverageSummaryDialog.cpp ContentCoverageSummaryDialog.h
     PageBoxSummaryDialog.cpp PageBoxSummaryDialog.h

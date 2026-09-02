@@ -13,11 +13,44 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QRegularExpression>
+#include <QStringList>
 #include <QTimer>
 #include <QUrl>
 
+#include <algorithm>
+
 namespace {
 const char* const kUserAgent = "ScanTailorSpectre/2.0";
+
+// OpenLibrary usually answers in a couple of seconds but now and then stalls
+// past ten. Since it is effectively our only source (see the class comment), a
+// single attempt makes one stall a dead end: one try plus up to two retries,
+// all inside the caller's budget, turns it into a slow success instead.
+const int kOpenLibraryAttempts = 3;
+const int kRetryBackoffMs = 400;  // multiplied by the retry number
+const int kMinAttemptMs = 1000;   // don't start an attempt that can't finish
+
+// Deadline for one OpenLibrary attempt. Attempts other than the last stop well
+// short of the shared deadline so that a stalled connection still leaves room
+// for another try; the last one may use whatever is left. Either way the whole
+// lookup stays inside the caller's budget.
+QDeadlineTimer attemptDeadline(const QDeadlineTimer& shared, int timeoutMs, bool lastAttempt) {
+  const qint64 remaining = shared.remainingTime();
+  if (lastAttempt) {
+    return QDeadlineTimer(remaining);
+  }
+  return QDeadlineTimer(std::min<qint64>(remaining, timeoutMs * 3 / 5));
+}
+
+// Backoff that keeps the (already blocking) caller's event loop turning.
+void pause(qint64 ms) {
+  if (ms <= 0) {
+    return;
+  }
+  QEventLoop loop;
+  QTimer::singleShot(static_cast<int>(ms), &loop, &QEventLoop::quit);
+  loop.exec();
+}
 
 // Digits only, but preserve a trailing X (ISBN-10 check digit), uppercased.
 QString normalizeIsbn(const QString& raw) {
@@ -46,35 +79,80 @@ BookLookup::BookLookup(QObject* parent)
 
 BookLookup::~BookLookup() = default;
 
-QByteArray BookLookup::fetch(const QString& url, int timeoutMs, bool& timedOut, bool& networkError) {
-  timedOut = false;
-  networkError = false;
-
+QNetworkReply* BookLookup::startRequest(const QString& url) {
   QNetworkRequest request((QUrl(url)));
   request.setRawHeader("User-Agent", kUserAgent);
+  return m_networkManager->get(request);
+}
 
-  QNetworkReply* reply = m_networkManager->get(request);
-
+void BookLookup::awaitReplies(const QList<QNetworkReply*>& replies, QDeadlineTimer deadline) {
   QEventLoop loop;
+  int pending = 0;
+  for (QNetworkReply* reply : replies) {
+    if (reply->isFinished()) {
+      continue;
+    }
+    ++pending;
+    connect(reply, &QNetworkReply::finished, &loop, [&loop, &pending]() {
+      if (--pending <= 0) {
+        loop.quit();
+      }
+    });
+  }
+  if (pending == 0) {
+    return;
+  }
+
   QTimer timer;
   timer.setSingleShot(true);
-  connect(&timer, &QTimer::timeout, &loop, [&loop, &timedOut, reply]() {
-    timedOut = true;
-    reply->abort();
-    loop.quit();
-  });
-  connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-  timer.start(timeoutMs);
+  connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+  timer.start(static_cast<int>(std::max<qint64>(0, deadline.remainingTime())));
   loop.exec();
 
+  // Anything still in flight has run out of the shared budget. abort() is the
+  // only place we cancel a reply, which is how harvest() tells a stall from a
+  // refusal.
+  for (QNetworkReply* reply : replies) {
+    if (!reply->isFinished()) {
+      reply->abort();
+    }
+  }
+}
+
+QByteArray BookLookup::harvest(QNetworkReply* reply, SourceOutcome& outcome) {
+  outcome = SourceOutcome();
+  outcome.httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
   QByteArray body;
-  if (!timedOut && reply->error() == QNetworkReply::NoError) {
+  if (reply->error() == QNetworkReply::NoError) {
     body = reply->readAll();
-  } else if (!timedOut) {
-    networkError = true;
+  } else if (reply->error() == QNetworkReply::OperationCanceledError) {
+    outcome.timedOut = true;
+  } else {
+    // Includes HTTP 429 and 5xx, which arrive as errors with a status code.
+    outcome.networkError = true;
   }
   reply->deleteLater();
   return body;
+}
+
+QString BookLookup::describeOutcome(const QString& source, const SourceOutcome& outcome, int timeoutMs) {
+  if (outcome.timedOut) {
+    return tr("%1: timed out after %2 s.").arg(source, QString::number(timeoutMs / 1000.0, 'g', 2));
+  }
+  if (outcome.httpStatus == 429) {
+    return tr("%1: HTTP 429 (rate limited).").arg(source);
+  }
+  if ((outcome.httpStatus >= 500) && (outcome.httpStatus < 600)) {
+    return tr("%1: HTTP %2 (service unavailable).").arg(source).arg(outcome.httpStatus);
+  }
+  if (outcome.networkError && (outcome.httpStatus > 0)) {
+    return tr("%1: HTTP %2.").arg(source).arg(outcome.httpStatus);
+  }
+  if (outcome.networkError) {
+    return tr("%1: could not connect.").arg(source);
+  }
+  return tr("%1: no record.").arg(source);
 }
 
 bool BookLookup::parseOpenLibrary(const QByteArray& body, const QString& isbn, BookMetadata& out) {
@@ -203,30 +281,44 @@ BookLookup::Result BookLookup::lookupByIsbn(const QString& isbn, BookMetadata& o
     return {Status::NotFound, tr("No ISBN to look up.")};
   }
 
-  // --- Primary: OpenLibrary ---
-  bool timedOut = false;
-  bool networkError = false;
+  // One budget for the whole lookup, retries included.
+  const QDeadlineTimer deadline(timeoutMs);
+
   const QString olUrl = QStringLiteral(
                             "https://openlibrary.org/api/books?bibkeys=ISBN:%1&format=json&jscmd=data")
                             .arg(norm);
-  const QByteArray olBody = fetch(olUrl, timeoutMs, timedOut, networkError);
-  if (timedOut) {
-    return {Status::Timeout, tr("The book database did not respond in time.")};
-  }
-
-  bool haveRecord = false;
-  if (!networkError) {
-    haveRecord = parseOpenLibrary(olBody, norm, out);
-  }
-
-  // --- Google Books: enrich (language + fill-ins) or act as fallback ---
   const QString gbUrl =
       QStringLiteral("https://www.googleapis.com/books/v1/volumes?q=isbn:%1").arg(norm);
-  bool gbTimedOut = false;
-  bool gbNetworkError = false;
-  const QByteArray gbBody = fetch(gbUrl, timeoutMs, gbTimedOut, gbNetworkError);
+
+  // --- Both sources at once: OpenLibrary (primary) and Google Books ---
+  QNetworkReply* olReply = startRequest(olUrl);
+  QNetworkReply* gbReply = startRequest(gbUrl);
+  awaitReplies({olReply, gbReply}, attemptDeadline(deadline, timeoutMs, kOpenLibraryAttempts == 1));
+
+  SourceOutcome ol;
+  SourceOutcome gb;
+  QByteArray olBody = harvest(olReply, ol);
+  const QByteArray gbBody = harvest(gbReply, gb);
+
+  // --- Retry OpenLibrary only; Google's 429 is a quota, not a hiccup ---
+  for (int attempt = 2; (attempt <= kOpenLibraryAttempts) && !ol.ok() && ol.retryable(); ++attempt) {
+    pause(std::min<qint64>(kRetryBackoffMs * (attempt - 1), deadline.remainingTime()));
+    if (deadline.remainingTime() < kMinAttemptMs) {
+      break;
+    }
+    QNetworkReply* retryReply = startRequest(olUrl);
+    awaitReplies({retryReply}, attemptDeadline(deadline, timeoutMs, attempt == kOpenLibraryAttempts));
+    olBody = harvest(retryReply, ol);
+  }
+
+  // OpenLibrary first: Google Books only fills what it left empty, and a
+  // Google failure must never cost us an OpenLibrary record.
+  bool haveRecord = false;
+  if (ol.ok()) {
+    haveRecord = parseOpenLibrary(olBody, norm, out);
+  }
   bool gbRecord = false;
-  if (!gbTimedOut && !gbNetworkError) {
+  if (gb.ok()) {
     gbRecord = mergeGoogleBooks(gbBody, norm, out);
   }
 
@@ -234,9 +326,13 @@ BookLookup::Result BookLookup::lookupByIsbn(const QString& isbn, BookMetadata& o
     return {Status::Ok, tr("Found metadata for ISBN %1.").arg(norm)};
   }
 
-  // Neither source had a usable record.
-  if (networkError && (gbTimedOut || gbNetworkError)) {
-    return {Status::NetworkError, tr("Could not reach the book database.")};
+  // Neither source had a usable record. If the primary source never answered we
+  // cannot claim the book is unknown — say what each source actually did.
+  if (!ol.ok()) {
+    const QString detail = QStringList{describeOutcome(QStringLiteral("Open Library"), ol, timeoutMs),
+                                       describeOutcome(QStringLiteral("Google Books"), gb, timeoutMs)}
+                               .join(QLatin1Char(' '));
+    return {ol.timedOut ? Status::Timeout : Status::NetworkError, detail};
   }
   return {Status::NotFound, tr("No record found for ISBN %1.").arg(norm)};
 }

@@ -2,7 +2,7 @@
 
 <img width="256" height="256" alt="scantailor-spectre" src="https://github.com/user-attachments/assets/a3988c3d-d80e-4089-9418-2bd8302b4b63" />
 
-**Version 2.0b2** | macOS (Apple Silicon) | Requires macOS 15 or later
+**Version 2.0b3** | macOS (Apple Silicon) | Requires macOS 15 or later
 
 ScanTailor Spectre transforms raw scans into clean, publication-ready pages. Import a PDF or folder of images, process through a 10-stage workflow, and export a polished, searchable PDF.
 
@@ -19,7 +19,7 @@ From the startup screen or from the file menu:
 - **Import Folder** - Load a folder of scanned images
 - **Import Project** - Load a project you have previously saved.
 
-**Supported formats:** PDF, TIFF, PNG, JPEG, BMP
+**Supported formats:** PDF, TIFF, PNG, JPEG, JPEG 2000 (.jp2), HEIC/HEIF, WebP, BMP, GIF, PNM (.pbm/.pgm/.ppm)
 
 Recently saved projects will be shown here.  
 
@@ -451,9 +451,34 @@ The "spectre in the machine" draws on all of these.
 
 ## Version History
 
+### Version 2.0b3
+
+**Released September 1, 2026.**
+
+- Auto Process exports now always carry the OCR text layer. Previously, a project whose OCR stage had been run and then switched off exported a PDF with no searchable text even though the recognized text was already stored; export now embeds whatever OCR results exist regardless of the stage toggle.
+- Quitting the app now actually exits it. The process used to linger after Quit, and opening a file into a windowless leftover instance wedged. Both paths are fixed.
+- Fixed a crash on the rendering thread when a Mixed page was output with split output, black-and-white foreground, and **Original background** on.
+- Projects made from imported PDFs now reopen at the resolution they were imported at. The import DPI was never saved, so a reopened project rendered every PDF page at 300 DPI while the stored page sizes still assumed the import resolution, silently corrupting page boxes, content boxes, and margins. The DPI is now written into the project file.
+- The TIFF compression setting in Finalize now takes effect. The control was wired to nothing; black-and-white and color TIFFs now use the compression you choose.
+- Cancelling a batch no longer wastes time decoding pages that were already cancelled.
+- Fixed a thread-safety problem in the page-deviation statistics used to flag unusual pages during batch processing.
+- **Fill margins: black** now works when dewarping is on. Under dewarping the setting was silently ignored and the margins came out white.
+- Right-clicking thumbnails and choosing **Convert to Black and White / Grayscale / Color** now re-renders every selected page immediately instead of only the current one.
+- New input formats: JPEG 2000 (.jp2), HEIC/HEIF, WebP, BMP, GIF, and PBM/PGM/PPM. Each is recognized with its true dimensions and resolution when the file records one.
+- Removed dead code: the phantom libharu dependency, the Metal GPU morphology path, and the unused ImageTypeDetector.
+- Under the hood, large pieces of the main window and the output generator were extracted into separate units with no behavior change, and new characterization test suites now pin project-file round trips, frozen project fixtures, output rendering goldens, deviation statistics, and TIFF compression wiring.
+- The macOS packaging documents and DMG script now match the release procedure.
+
 ### Version 2.0b2
 
+**Released August 22, 2026.**
+
+- The app no longer quits unexpectedly when a screen reader or an automation tool inspects its window. VoiceOver, macOS automation, and assistive software all read an app's controls as it starts up, and a bug in the Qt 6.11.1 toolkit crashed the app the moment any of them looked at a list such as the stage list. Those lists are now described more simply so the crash cannot happen; everything else stays fully readable to assistive tools.
 - PDF import now accepts PDFs with junk bytes (such as a UTF-8 BOM) before the `%PDF` header, matching Preview's behavior; some Papers-imported PDFs previously failed with "Failed to read PDF file."
+- A PDF that is still being copied into place when you open it is now given a moment to finish instead of being reported as unreadable.
+- When a PDF really cannot be read, the message now names the file and says why — missing header, unreadable file, rejected by macOS, or no pages — instead of a bare "Failed to read PDF file."
+- Changing a page's color mode in Finalize no longer wipes that page's own Output settings. Black-and-white options, color options, and photo adjustments now survive a mode change instead of reverting to defaults.
+- ISBN lookup in Export now queries Open Library and Google Books at the same time under a single 15-second budget, retries Open Library when it stalls, and tells you exactly which source failed and how.
 - Right-clicking thumbnails in the Finalize and Output stages now offers **Convert to Black and White**, **Convert to Grayscale**, and **Convert to Color**, applying to all selected pages; the matching c/g/b keyboard shortcuts now also keep the Finalize mode display in sync.
 
 ### Version 2.0b1

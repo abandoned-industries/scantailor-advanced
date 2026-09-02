@@ -1,21 +1,31 @@
 set(sources
     main.cpp
     TestAutoColorModePolicy.cpp
+    TestBmpInput.cpp
     TestBatchProcessingContext.cpp
     TestColorDetection.cpp
     TestContentSpanFinder.cpp
+    TestDeviationProvider.cpp
     TestDurationFormatter.cpp
+    TestGifInput.cpp
+    TestHeicInput.cpp
+    TestJp2Input.cpp
+    TestLoadFileTask.cpp
     TestOcrResult.cpp
+    TestOcrTextCollector.cpp
     TestPageLayoutOutput.cpp
     TestPdfExporter.cpp
     TestPdfReadError.cpp
     TestPdfReader.cpp
     TestPictureRegionMask.cpp
+    TestPnmInput.cpp
     TestPhotoAdjustments.cpp
     TestPlatePrior.cpp
     TestProjectFolder.cpp
     TestProjectPortability.cpp
     TestSmartFilenameOrdering.cpp
+    TestTiffCompressionWiring.cpp
+    TestWebpInput.cpp
     TestZoteroLoopSidecar.cpp)
 
 add_executable(core_tests ${sources})
@@ -23,7 +33,7 @@ target_compile_definitions(core_tests PRIVATE SCANTAILOR_TEST_SOURCE_DIR="${CMAK
 target_link_libraries(
     core_tests
     PRIVATE core Boost::unit_test_framework
-    Boost::prg_exec_monitor ${EXTRA_LIBS})
+    Boost::prg_exec_monitor TIFF::TIFF ${EXTRA_LIBS})
 target_include_directories(
     core_tests
     PRIVATE "${CMAKE_SOURCE_DIR}/src/dewarping")
@@ -48,6 +58,59 @@ target_include_directories(output_exposure_controls_tests PRIVATE
 add_test(NAME output_exposure_controls_tests COMMAND output_exposure_controls_tests)
 set_tests_properties(output_exposure_controls_tests PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_executable(project_roundtrip_tests
+    RoundtripTestMain.cpp
+    RoundtripProjectBuilder.cpp
+    TestProjectSaveLoadSave.cpp
+    TestProjectXmlTolerance.cpp
+    TestFrozenProjectFixtures.cpp)
+target_link_libraries(
+    project_roundtrip_tests
+    PRIVATE core Boost::unit_test_framework
+    Boost::prg_exec_monitor Qt::Widgets ${EXTRA_LIBS})
+target_include_directories(
+    project_roundtrip_tests
+    PRIVATE "${CMAKE_SOURCE_DIR}/src/dewarping" "${CMAKE_BINARY_DIR}")
+target_compile_definitions(project_roundtrip_tests PRIVATE SCANTAILOR_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME project_roundtrip_tests COMMAND project_roundtrip_tests --log_level=message)
+set_tests_properties(project_roundtrip_tests PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# Writes the frozen v4 project fixtures (not a test; run manually — see
+# fixtures/projects/README.md for the regeneration recipe).
+add_executable(project_fixture_writer
+    ProjectFixtureWriter.cpp
+    RoundtripProjectBuilder.cpp)
+target_link_libraries(
+    project_fixture_writer
+    PRIVATE core Qt::Widgets ${EXTRA_LIBS})
+target_include_directories(
+    project_fixture_writer
+    PRIVATE "${CMAKE_SOURCE_DIR}/src/dewarping")
+
+add_executable(output_golden_tests
+    OutputGoldenMain.cpp
+    OutputGoldenHarness.cpp
+    GoldenSourcePages.cpp
+    TestOutputGolden.cpp
+    TestOutputGoldenD2Probe.cpp)
+target_link_libraries(
+    output_golden_tests
+    PRIVATE core output Boost::unit_test_framework
+    Boost::prg_exec_monitor ${EXTRA_LIBS})
+target_include_directories(
+    output_golden_tests
+    PRIVATE "${CMAKE_SOURCE_DIR}/src/dewarping")
+target_compile_definitions(output_golden_tests PRIVATE SCANTAILOR_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME output_golden_tests COMMAND output_golden_tests --log_level=message)
+
+# Writes the frozen synthetic source pages for the golden tests (not a test;
+# run manually — see fixtures/golden/README.md).
+add_executable(golden_fixture_writer
+    GoldenFixtureWriter.cpp
+    GoldenSourcePages.cpp)
+target_link_libraries(golden_fixture_writer PRIVATE Qt::Gui Qt::Core)
 
 add_executable(color_detection_diagnostic ColorDetectionDiagnostic.cpp)
 target_link_libraries(color_detection_diagnostic PRIVATE core ${LEPTONICA_LIBRARIES})

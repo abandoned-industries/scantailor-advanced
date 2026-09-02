@@ -1,0 +1,339 @@
+<project layoutDirection="LTR" outputDirectory="out" version="4">
+  <directories>
+    <directory id="1" path="scans"/>
+  </directories>
+  <files>
+    <file dirId="1" id="2" name="page1.png"/>
+    <file dirId="1" id="5" name="spread.png"/>
+  </files>
+  <images>
+    <image fileId="2" fileImage="0" id="3" subPages="1">
+      <size height="1400" width="1000"/>
+      <dpi horizontal="300" vertical="300"/>
+    </image>
+    <image fileId="5" fileImage="0" id="6" subPages="2">
+      <size height="1400" width="2000"/>
+      <dpi horizontal="300" vertical="300"/>
+    </image>
+  </images>
+  <pages>
+    <page id="4" imageId="3" subPage="single"/>
+    <page id="7" imageId="6" subPage="left"/>
+    <page id="8" imageId="6" subPage="right"/>
+  </pages>
+  <file-name-disambiguation/>
+  <filters>
+    <fix-orientation>
+      <image id="3">
+        <rotation degrees="90"/>
+      </image>
+      <image-settings/>
+    </fix-orientation>
+    <page-split defaultLayoutType="auto-detect">
+      <image id="3" layoutType="single-uncut">
+        <params decisionReason="characterization" mode="manual">
+          <pages type="single-uncut">
+            <outline>
+              <point x="0" y="0"/>
+              <point x="1000" y="0"/>
+              <point x="1000" y="1400"/>
+              <point x="0" y="1400"/>
+              <point x="0" y="0"/>
+            </outline>
+          </pages>
+          <dependencies detectorVersion="30">
+            <rotation degrees="0"/>
+            <size height="1400" width="1000"/>
+            <layoutType>single-uncut</layoutType>
+          </dependencies>
+        </params>
+      </image>
+      <image id="6" layoutType="two-pages">
+        <params decisionReason="characterization" mode="manual">
+          <pages type="two-pages">
+            <outline>
+              <point x="0" y="0"/>
+              <point x="2000" y="0"/>
+              <point x="2000" y="1400"/>
+              <point x="0" y="1400"/>
+              <point x="0" y="0"/>
+            </outline>
+            <cutter1>
+              <p1 x="1000" y="0"/>
+              <p2 x="1010" y="1400"/>
+            </cutter1>
+          </pages>
+          <dependencies detectorVersion="30">
+            <rotation degrees="0"/>
+            <size height="1400" width="2000"/>
+            <layoutType>two-pages</layoutType>
+          </dependencies>
+        </params>
+      </image>
+    </page-split>
+    <deskew>
+      <page id="4">
+        <params angle="1.25" decisionReason="unit-test" mode="manual">
+          <dependencies>
+            <rotation degrees="0"/>
+            <page-outline>
+              <point x="0" y="0"/>
+              <point x="990" y="0"/>
+              <point x="990" y="1390"/>
+              <point x="0" y="1390"/>
+              <point x="0" y="0"/>
+            </page-outline>
+          </dependencies>
+        </params>
+      </page>
+      <page id="7">
+        <params angle="1.75" decisionReason="unit-test" mode="manual">
+          <dependencies>
+            <rotation degrees="0"/>
+            <page-outline>
+              <point x="0" y="0"/>
+              <point x="990" y="0"/>
+              <point x="990" y="1390"/>
+              <point x="0" y="1390"/>
+              <point x="0" y="0"/>
+            </page-outline>
+          </dependencies>
+        </params>
+      </page>
+      <page id="8">
+        <params angle="2.25" decisionReason="unit-test" mode="manual">
+          <dependencies>
+            <rotation degrees="0"/>
+            <page-outline>
+              <point x="0" y="0"/>
+              <point x="990" y="0"/>
+              <point x="990" y="1390"/>
+              <point x="0" y="1390"/>
+              <point x="0" y="0"/>
+            </page-outline>
+          </dependencies>
+        </params>
+      </page>
+      <image-settings/>
+    </deskew>
+    <page-box pageDetectionTolerance="0.1">
+      <page-detection-box height="-1" width="-1"/>
+      <page id="4">
+        <params fineTuneCorners="1" pageDetectionMode="manual">
+          <page-rect height="1330" width="940" x="12" y="18"/>
+          <dependencies fineTuneCorners="1" pageDetectionMode="manual">
+            <rotated-page-outline>
+              <point x="0" y="0"/>
+              <point x="990" y="0"/>
+              <point x="990" y="1390"/>
+              <point x="0" y="1390"/>
+              <point x="0" y="0"/>
+            </rotated-page-outline>
+          </dependencies>
+        </params>
+      </page>
+      <page id="7">
+        <params fineTuneCorners="1" pageDetectionMode="manual">
+          <page-rect height="1330" width="940" x="12" y="18"/>
+          <dependencies fineTuneCorners="1" pageDetectionMode="manual">
+            <rotated-page-outline>
+              <point x="0" y="0"/>
+              <point x="990" y="0"/>
+              <point x="990" y="1390"/>
+              <point x="0" y="1390"/>
+              <point x="0" y="0"/>
+            </rotated-page-outline>
+          </dependencies>
+        </params>
+      </page>
+      <page id="8">
+        <params fineTuneCorners="1" pageDetectionMode="manual">
+          <page-rect height="1330" width="940" x="12" y="18"/>
+          <dependencies fineTuneCorners="1" pageDetectionMode="manual">
+            <rotated-page-outline>
+              <point x="0" y="0"/>
+              <point x="990" y="0"/>
+              <point x="990" y="1390"/>
+              <point x="0" y="1390"/>
+              <point x="0" y="0"/>
+            </rotated-page-outline>
+          </dependencies>
+        </params>
+      </page>
+    </page-box>
+    <select-content pageDetectionTolerance="0.1">
+      <page id="4">
+        <params contentDetectionMode="manual" fineTuneCorners="0" pageDetectionMode="manual">
+          <content-rect height="1240" width="860" x="40" y="60"/>
+          <page-rect height="1330" width="940" x="12" y="18"/>
+          <content-size-mm height="105" width="72.8"/>
+          <dependencies>
+            <rotated-page-outline>
+              <point x="0" y="0"/>
+              <point x="990" y="0"/>
+              <point x="990" y="1390"/>
+              <point x="0" y="1390"/>
+              <point x="0" y="0"/>
+            </rotated-page-outline>
+            <params contentDetectionMode="manual" fineTuneCorners="0" pageDetectionMode="manual"/>
+          </dependencies>
+        </params>
+      </page>
+      <page id="7">
+        <params contentDetectionMode="manual" fineTuneCorners="0" pageDetectionMode="manual">
+          <content-rect height="1240" width="860" x="40" y="60"/>
+          <page-rect height="1330" width="940" x="12" y="18"/>
+          <content-size-mm height="105" width="72.8"/>
+          <dependencies>
+            <rotated-page-outline>
+              <point x="0" y="0"/>
+              <point x="990" y="0"/>
+              <point x="990" y="1390"/>
+              <point x="0" y="1390"/>
+              <point x="0" y="0"/>
+            </rotated-page-outline>
+            <params contentDetectionMode="manual" fineTuneCorners="0" pageDetectionMode="manual"/>
+          </dependencies>
+        </params>
+      </page>
+      <page id="8">
+        <params contentDetectionMode="manual" fineTuneCorners="0" pageDetectionMode="manual">
+          <content-rect height="1240" width="860" x="40" y="60"/>
+          <page-rect height="1330" width="940" x="12" y="18"/>
+          <content-size-mm height="105" width="72.8"/>
+          <dependencies>
+            <rotated-page-outline>
+              <point x="0" y="0"/>
+              <point x="990" y="0"/>
+              <point x="990" y="1390"/>
+              <point x="0" y="1390"/>
+              <point x="0" y="0"/>
+            </rotated-page-outline>
+            <params contentDetectionMode="manual" fineTuneCorners="0" pageDetectionMode="manual"/>
+          </dependencies>
+        </params>
+      </page>
+    </select-content>
+    <page-layout showMiddleRect="1">
+      <page id="4">
+        <params autoMargins="0" fullBleed="1">
+          <hardMarginsMM bottom="9" left="11.5" right="11.5" top="7"/>
+          <pageRect height="1330" width="940" x="0" y="0"/>
+          <contentRect height="1240" width="860" x="40" y="60"/>
+          <contentSizeMM height="105" width="72.8"/>
+          <alignment hor="left" null="0" vert="top"/>
+        </params>
+      </page>
+      <page id="7">
+        <params autoMargins="0" fullBleed="1">
+          <hardMarginsMM bottom="9" left="11.5" right="11.5" top="7"/>
+          <pageRect height="1330" width="940" x="0" y="0"/>
+          <contentRect height="1240" width="860" x="40" y="60"/>
+          <contentSizeMM height="105" width="72.8"/>
+          <alignment hor="left" null="0" vert="top"/>
+        </params>
+      </page>
+      <page id="8">
+        <params autoMargins="0" fullBleed="1">
+          <hardMarginsMM bottom="9" left="11.5" right="11.5" top="7"/>
+          <pageRect height="1330" width="940" x="0" y="0"/>
+          <contentRect height="1240" width="860" x="40" y="60"/>
+          <contentSizeMM height="105" width="72.8"/>
+          <alignment hor="left" null="0" vert="top"/>
+        </params>
+      </page>
+    </page-layout>
+    <finalize pictureDetectionSensitivity="8">
+      <page id="4">
+        <params automaticDetection="1" colorMode="mixed" detected="1" detectionSensitivity="7" detectorVersion="3" forceWB="1" processed="1"/>
+      </page>
+      <page id="7">
+        <params colorMode="grayscale" detected="0" processed="1"/>
+      </page>
+    </finalize>
+    <output>
+      <page id="4">
+        <zones>
+          <zone>
+            <spline>
+              <point x="100" y="120"/>
+              <point x="100" y="320"/>
+              <point x="400" y="320"/>
+              <point x="400" y="120"/>
+              <point x="100" y="120"/>
+            </spline>
+            <properties/>
+          </zone>
+        </zones>
+        <fill-zones/>
+        <params blackOnWhite="1" depthPerception="2" despeckleLevel="2.5">
+          <picture-shape-options higherSearchSensitivity="0" pictureShape="free" sensitivity="100"/>
+          <dewarping-options mode="manual" postDeskew="0" postDeskewAngle="0.75"/>
+          <dpi horizontal="400" vertical="400"/>
+          <color-params colorMode="mixed" colorModePresetSet="0" colorModeUserSet="1">
+            <color-or-grayscale fillMargins="1" fillOffcut="1" fillingColor="white" normalizeIlluminationColor="1" paperBrightnessThreshold="120" paperCoverageThreshold="0.01" paperSaturationThreshold="60" useAdaptiveDetection="1" wienerCoef="0" wienerWinSize="5">
+              <posterization-options enabled="0" forceBlackAndWhite="1" level="4" normalizationEnabled="0"/>
+            </color-or-grayscale>
+            <bw binarizationMethod="otsu" morphologicalSmoothing="1" normalizeIlluminationBW="1" sauvolaCoef="0.34" savitzkyGolaySmoothing="1" thresholdAdj="0" windowSize="200" wolfCoef="0.3" wolfLowerBound="1" wolfUpperBound="254">
+              <color-segmenter-options blueThresholdAdjustment="0" enabled="0" greenThresholdAdjustment="0" noiseReduction="7" redThresholdAdjustment="0"/>
+            </bw>
+            <photo-adjustments blacks="0" contrast="0" exposure="0" highlights="0" shadows="0" temp="0" tint="0" whites="0"/>
+          </color-params>
+          <splitting originalBackground="0" splitOutput="0" splittingMode="bw"/>
+        </params>
+        <processing-params autoLevels="0" autoZonesFound="0" blackOnWhiteSetManually="0" brightness="0" contrast="0" passThrough="0"/>
+      </page>
+      <page id="7">
+        <zones/>
+        <fill-zones/>
+        <params blackOnWhite="1" depthPerception="2" despeckleLevel="1">
+          <picture-shape-options higherSearchSensitivity="0" pictureShape="free" sensitivity="100"/>
+          <dewarping-options mode="off" postDeskew="1" postDeskewAngle="0"/>
+          <dpi horizontal="300" vertical="300"/>
+          <color-params colorMode="bw" colorModePresetSet="0" colorModeUserSet="0">
+            <color-or-grayscale fillMargins="1" fillOffcut="1" fillingColor="white" normalizeIlluminationColor="1" paperBrightnessThreshold="120" paperCoverageThreshold="0.01" paperSaturationThreshold="60" useAdaptiveDetection="1" wienerCoef="0" wienerWinSize="5">
+              <posterization-options enabled="0" forceBlackAndWhite="1" level="4" normalizationEnabled="0"/>
+            </color-or-grayscale>
+            <bw binarizationMethod="otsu" morphologicalSmoothing="1" normalizeIlluminationBW="1" sauvolaCoef="0.34" savitzkyGolaySmoothing="1" thresholdAdj="0" windowSize="200" wolfCoef="0.3" wolfLowerBound="1" wolfUpperBound="254">
+              <color-segmenter-options blueThresholdAdjustment="0" enabled="0" greenThresholdAdjustment="0" noiseReduction="7" redThresholdAdjustment="0"/>
+            </bw>
+            <photo-adjustments blacks="0" contrast="0" exposure="0" highlights="0" shadows="0" temp="0" tint="0" whites="0"/>
+          </color-params>
+          <splitting originalBackground="0" splitOutput="0" splittingMode="bw"/>
+        </params>
+        <processing-params autoLevels="0" autoZonesFound="0" blackOnWhiteSetManually="0" brightness="0" contrast="0" passThrough="0"/>
+      </page>
+      <page id="8">
+        <zones/>
+        <fill-zones/>
+        <params blackOnWhite="1" depthPerception="2" despeckleLevel="1">
+          <picture-shape-options higherSearchSensitivity="0" pictureShape="free" sensitivity="100"/>
+          <dewarping-options mode="off" postDeskew="1" postDeskewAngle="0"/>
+          <dpi horizontal="300" vertical="300"/>
+          <color-params colorMode="bw" colorModePresetSet="0" colorModeUserSet="0">
+            <color-or-grayscale fillMargins="1" fillOffcut="1" fillingColor="white" normalizeIlluminationColor="1" paperBrightnessThreshold="120" paperCoverageThreshold="0.01" paperSaturationThreshold="60" useAdaptiveDetection="1" wienerCoef="0" wienerWinSize="5">
+              <posterization-options enabled="0" forceBlackAndWhite="1" level="4" normalizationEnabled="0"/>
+            </color-or-grayscale>
+            <bw binarizationMethod="otsu" morphologicalSmoothing="1" normalizeIlluminationBW="1" sauvolaCoef="0.34" savitzkyGolaySmoothing="1" thresholdAdj="0" windowSize="200" wolfCoef="0.3" wolfLowerBound="1" wolfUpperBound="254">
+              <color-segmenter-options blueThresholdAdjustment="0" enabled="0" greenThresholdAdjustment="0" noiseReduction="7" redThresholdAdjustment="0"/>
+            </bw>
+            <photo-adjustments blacks="0" contrast="0" exposure="0" highlights="0" shadows="0" temp="0" tint="0" whites="0"/>
+          </color-params>
+          <splitting originalBackground="0" splitOutput="0" splittingMode="bw"/>
+        </params>
+        <processing-params autoLevels="0" autoZonesFound="0" blackOnWhiteSetManually="0" brightness="0" contrast="0" passThrough="0"/>
+      </page>
+    </output>
+    <ocr accurate="1" enabled="1" language="de-DE" languageCorrection="0">
+      <page id="4">
+        <ocr-result accurate="1" imageHeight="1330" imageWidth="940" language="de-DE" languageCorrection="1" outputFileMTime="-1" outputFileSize="-1" recognitionSchema="0">
+          <word confidence="0.930" h="24.00" text="Beispiel" w="120.00" x="40.00" y="60.00"/>
+          <word confidence="0.880" h="24.00" text="Seite" w="80.00" x="170.00" y="60.00"/>
+        </ocr-result>
+      </page>
+    </ocr>
+    <export compressGrayscale="1" maxDpi="500" noDpiLimit="1" quality="2" sendToZotero="1" sendToZoteroExplicit="1">
+      <metadata authors="Ada Example" creatorRole="editor" isbn="9780000000000" language="en" place="Newark" publisher="Test Press" title="Characterization Fixtures" year="2026"/>
+    </export>
+  </filters>
+</project>

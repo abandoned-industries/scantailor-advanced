@@ -26,8 +26,6 @@ The app currently requires macOS 12+ because `PdfReader.cpp` uses `QPdfDocument`
 
 | PDF Export | `QPdfWriter` (Qt::Gui) | macOS 10.14+ ✓ |
 
-| PDF Export | libharu | Any ✓ |
-
  
 
 ## Solution

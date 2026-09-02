@@ -55,7 +55,7 @@
    <item>
     <widget class="QCheckBox" name="ocrCheckBox">
      <property name="toolTip">
-      <string>Recognize text from Weasel's processed page images after Output.</string>
+      <string>Recognize text from the processed page images after Output.</string>
      </property>
      <property name="text">
       <string>Run OCR after Output</string>

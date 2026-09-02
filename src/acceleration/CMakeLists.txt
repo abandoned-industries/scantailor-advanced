@@ -10,7 +10,6 @@ if(APPLE)
     # Metal shader compilation
     set(METAL_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gauss_blur.metal
-        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/morphology.metal
     )
     set(METALLIB_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/default.metallib)
 
@@ -41,8 +40,7 @@ if(APPLE)
         add_custom_command(
             OUTPUT ${METALLIB_OUTPUT}
             COMMAND ${METAL_EXECUTABLE} -c ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gauss_blur.metal -o ${CMAKE_CURRENT_BINARY_DIR}/gauss_blur.air
-            COMMAND ${METAL_EXECUTABLE} -c ${CMAKE_CURRENT_SOURCE_DIR}/shaders/morphology.metal -o ${CMAKE_CURRENT_BINARY_DIR}/morphology.air
-            COMMAND ${METALLIB_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/gauss_blur.air ${CMAKE_CURRENT_BINARY_DIR}/morphology.air -o ${METALLIB_OUTPUT}
+            COMMAND ${METALLIB_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/gauss_blur.air -o ${METALLIB_OUTPUT}
             DEPENDS ${METAL_SOURCES}
             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
             COMMENT "Compiling Metal shaders"
@@ -59,8 +57,6 @@ if(APPLE)
         MetalGaussBlur.mm
         MetalLifecycle.h
         MetalLifecycle.mm
-        MetalMorphology.h
-        MetalMorphology.mm
     )
 
     add_library(acceleration STATIC ${sources})

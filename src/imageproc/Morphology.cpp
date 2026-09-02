@@ -14,7 +14,6 @@
 #include "RasterOp.h"
 
 #ifdef Q_OS_MACOS
-#include "MetalMorphology.h"
 #include <Accelerate/Accelerate.h>
 #endif
 
@@ -23,7 +22,7 @@ namespace imageproc {
 #ifdef Q_OS_MACOS
 /**
  * Acceleration is only equivalent to the CPU path for a brick centered on its
- * origin with odd dimensions: vImage/Metal assume a symmetric kernel, and with
+ * origin with odd dimensions: vImage assumes a symmetric kernel, and with
  * kvImageEdgeExtend the replicated edge pixel is already inside the window, so
  * edge handling matches the CPU path as long as srcSurroundings is neutral for
  * the min/max being computed (checked at the call sites).
@@ -793,15 +792,6 @@ GrayImage dilateGray(const GrayImage& src,
   // symmetric brick. 0xff surroundings never win a min filter, so edge-extend
   // is equivalent there.
   if (dstArea == src.rect() && brickIsCenteredOdd(brick)) {
-    if (metalMorphologyAvailable()) {
-      GrayImage dst(src);
-      const int brickWidth = brick.width();
-      const int brickHeight = brick.height();
-      if (metalDilateGray(dst.data(), dst.width(), dst.height(), dst.stride(),
-                          brickWidth, brickHeight, srcSurroundings)) {
-        return dst;
-      }
-    }
     // Try vImage SIMD acceleration
     if (srcSurroundings == 0xff) {
       GrayImage result = vImageDilateGray(src, brick, srcSurroundings);
@@ -864,15 +854,6 @@ GrayImage erodeGray(const GrayImage& src,
   // symmetric brick. 0x00 surroundings never win a max filter, so edge-extend
   // is equivalent there.
   if (dstArea == src.rect() && brickIsCenteredOdd(brick)) {
-    if (metalMorphologyAvailable()) {
-      GrayImage dst(src);
-      const int brickWidth = brick.width();
-      const int brickHeight = brick.height();
-      if (metalErodeGray(dst.data(), dst.width(), dst.height(), dst.stride(),
-                         brickWidth, brickHeight, srcSurroundings)) {
-        return dst;
-      }
-    }
     // Try vImage SIMD acceleration
     if (srcSurroundings == 0x00) {
       GrayImage result = vImageErodeGray(src, brick, srcSurroundings);

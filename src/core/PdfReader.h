@@ -76,6 +76,15 @@ class PdfReader {
    */
   static int getImportDpi(const QString& filePath);
 
+  /**
+   * \brief Whether an import DPI has been explicitly set for this file.
+   *
+   * Used by ProjectWriter to persist the chosen render DPI into the project
+   * XML (QW5); files without an entry render at DEFAULT_RENDER_DPI and are
+   * saved without the attribute.
+   */
+  static bool hasImportDpi(const QString& filePath);
+
  private:
   static bool checkMagic(const QByteArray& data);
 };

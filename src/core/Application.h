@@ -19,6 +19,8 @@ class Application : public QApplication {
  signals:
   void fileOpenRequested(const QString& filePath);
 
+  void quitRequested();
+
  public:
   const QString& getCurrentLocale() const;
 

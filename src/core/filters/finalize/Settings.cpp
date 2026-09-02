@@ -11,6 +11,7 @@
 #include <QStandardPaths>
 
 #include "AbstractRelinker.h"
+#include "ApplicationSettings.h"
 #include "PageSequence.h"
 #include "RelinkablePath.h"
 #include "LeptonicaDetector.h"
@@ -77,9 +78,39 @@ QDomElement Params::toXml(QDomDocument& doc, const QString& name) const {
   return el;
 }
 
-Settings::Settings() = default;
+namespace {
+// Explicit mapping between the finalize UI enum and the raw libtiff codes
+// that ApplicationSettings stores and TiffWriter consumes (QW4; audit F2).
+// The two vocabularies share no values: finalize {LZW=0, Deflate=1} vs
+// libtiff COMPRESSION_LZW=5, COMPRESSION_ADOBE_DEFLATE=8.
+constexpr int kLibtiffLzw = 5;           // COMPRESSION_LZW
+constexpr int kLibtiffAdobeDeflate = 8;  // COMPRESSION_ADOBE_DEFLATE
+}  // namespace
+
+Settings::Settings() {
+  // Reflect the persisted color-compression choice back into the UI-facing
+  // value so the finalize control shows what TiffWriter will actually do.
+  // Unknown or hand-edited codes keep the default display and are NOT
+  // written back (writing happens only in setTiffCompression, i.e. on a user
+  // action), so configurations that never touch the control keep their
+  // current behavior exactly.
+  if (ApplicationSettings::getInstance().getTiffColorCompression() == kLibtiffAdobeDeflate) {
+    m_tiffCompression = TiffCompression::Deflate;
+  }
+}
 
 Settings::~Settings() = default;
+
+void Settings::setTiffCompression(const TiffCompression compression) {
+  m_tiffCompression = compression;
+  // Sync to the ApplicationSettings key TiffWriter actually reads
+  // (settings/color_compression). The bitonal key (settings/bw_compression,
+  // CCITT G4 by default) is deliberately untouched: the control offers only
+  // the continuous-tone codecs LZW/Deflate, and G4 is the right codec for
+  // bitonal TIFFs.
+  ApplicationSettings::getInstance().setTiffColorCompression(
+      compression == TiffCompression::Deflate ? kLibtiffAdobeDeflate : kLibtiffLzw);
+}
 
 void Settings::clear() {
   const QMutexLocker locker(&m_mutex);

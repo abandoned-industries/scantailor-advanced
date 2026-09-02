@@ -53,6 +53,14 @@
                 <string>jpg</string>
                 <string>jpeg</string>
                 <string>bmp</string>
+                <string>jp2</string>
+                <string>heic</string>
+                <string>heif</string>
+                <string>webp</string>
+                <string>gif</string>
+                <string>pbm</string>
+                <string>pgm</string>
+                <string>ppm</string>
             </array>
             <key>CFBundleTypeRole</key>
             <string>Viewer</string>

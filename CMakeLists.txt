@@ -220,17 +220,6 @@ if (UNIX)
   link_libraries(Threads::Threads)
 endif()
 
-#=================================== LibHaru (PDF compression) ===================================#
-
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
-find_package(LibHaru)
-if(LibHaru_FOUND)
-  message(STATUS "LibHaru found - PDF export will use optimized compression")
-  add_definitions(-DHAVE_LIBHARU)
-else()
-  message(STATUS "LibHaru not found - PDF export will use Qt (larger files)")
-endif()
-
 #=================================== System ===================================#
 
 set(EXTRA_LIBS "")

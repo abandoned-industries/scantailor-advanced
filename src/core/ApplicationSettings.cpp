@@ -59,6 +59,7 @@ const QString ApplicationSettings::SHOW_CANCELING_SELECTION_QUESTION_KEY = "sele
 const QString ApplicationSettings::JPEG_OUTPUT_KEY = "jpeg_output";
 const QString ApplicationSettings::JPEG_QUALITY_KEY = "jpeg_quality";
 const QString ApplicationSettings::TEMP_CLEANUP_WARNING_KEY = "temp_cleanup_warning";
+const QString ApplicationSettings::BATCH_PROCESSING_THREADS_KEY = "batch_processing_threads";
 const QString ApplicationSettings::PDF_RECOMMENDED_NAME_KEY = "pdf_recommended_name";
 
 QString ApplicationSettings::getKey(const QString& keyName) {
@@ -258,6 +259,18 @@ int ApplicationSettings::getJpegQuality() const {
 
 void ApplicationSettings::setJpegQuality(int quality) {
   m_settings.setValue(getKey(JPEG_QUALITY_KEY), quality);
+}
+
+int ApplicationSettings::getBatchProcessingThreads(const int defaultValue) const {
+  return m_settings.value(getKey(BATCH_PROCESSING_THREADS_KEY), defaultValue).toInt();
+}
+
+void ApplicationSettings::setBatchProcessingThreads(const int threads, const int maxThreads) {
+  if (threads == maxThreads) {
+    m_settings.remove(getKey(BATCH_PROCESSING_THREADS_KEY));
+  } else {
+    m_settings.setValue(getKey(BATCH_PROCESSING_THREADS_KEY), threads);
+  }
 }
 
 bool ApplicationSettings::isTempCleanupWarningEnabled() const {

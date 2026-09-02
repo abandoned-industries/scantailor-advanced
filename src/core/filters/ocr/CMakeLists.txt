@@ -10,6 +10,7 @@ set(sources
     CacheDrivenTask.cpp CacheDrivenTask.h
     Settings.cpp Settings.h
     OcrResult.cpp OcrResult.h
+    OcrTextCollector.cpp OcrTextCollector.h
     ImageView.cpp ImageView.h
     Thumbnail.cpp Thumbnail.h)
 

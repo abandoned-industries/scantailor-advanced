@@ -1,0 +1,91 @@
+<project layoutDirection="LTR" outputDirectory="out" version="4">
+  <directories>
+    <directory id="1" path="."/>
+  </directories>
+  <files>
+    <file dirId="1" id="2" name="book-600dpi.pdf"/>
+  </files>
+  <images>
+    <image fileId="2" fileImage="1" id="3" subPages="1">
+      <size height="1800" width="1200"/>
+      <dpi horizontal="600" vertical="600"/>
+    </image>
+  </images>
+  <pages>
+    <page id="4" imageId="3" subPage="single"/>
+  </pages>
+  <file-name-disambiguation/>
+  <filters>
+    <fix-orientation>
+      <image-settings/>
+    </fix-orientation>
+    <page-split defaultLayoutType="auto-detect"/>
+    <deskew>
+      <page id="4">
+        <params angle="0.5" decisionReason="pdf600-fixture" mode="manual">
+          <dependencies>
+            <rotation degrees="0"/>
+            <page-outline>
+              <point x="0" y="0"/>
+              <point x="1200" y="0"/>
+              <point x="1200" y="1800"/>
+              <point x="0" y="1800"/>
+              <point x="0" y="0"/>
+            </page-outline>
+          </dependencies>
+        </params>
+      </page>
+      <image-settings/>
+    </deskew>
+    <page-box pageDetectionTolerance="0.1">
+      <page-detection-box height="-1" width="-1"/>
+    </page-box>
+    <select-content pageDetectionTolerance="0.1">
+      <page id="4">
+        <params contentDetectionMode="manual" fineTuneCorners="0" pageDetectionMode="manual">
+          <content-rect height="1500" width="1000" x="100" y="150"/>
+          <page-rect height="1800" width="1200" x="0" y="0"/>
+          <content-size-mm height="63.5" width="42.3"/>
+          <dependencies>
+            <rotated-page-outline>
+              <point x="0" y="0"/>
+              <point x="1200" y="0"/>
+              <point x="1200" y="1800"/>
+              <point x="0" y="1800"/>
+              <point x="0" y="0"/>
+            </rotated-page-outline>
+            <params contentDetectionMode="manual" fineTuneCorners="0" pageDetectionMode="manual"/>
+          </dependencies>
+        </params>
+      </page>
+    </select-content>
+    <page-layout showMiddleRect="1"/>
+    <finalize pictureDetectionSensitivity="8"/>
+    <output>
+      <page id="4">
+        <zones/>
+        <fill-zones/>
+        <params blackOnWhite="1" depthPerception="2" despeckleLevel="1">
+          <picture-shape-options higherSearchSensitivity="0" pictureShape="free" sensitivity="100"/>
+          <dewarping-options mode="off" postDeskew="1" postDeskewAngle="0"/>
+          <dpi horizontal="300" vertical="300"/>
+          <color-params colorMode="bw" colorModePresetSet="0" colorModeUserSet="0">
+            <color-or-grayscale fillMargins="1" fillOffcut="1" fillingColor="white" normalizeIlluminationColor="1" paperBrightnessThreshold="120" paperCoverageThreshold="0.01" paperSaturationThreshold="60" useAdaptiveDetection="1" wienerCoef="0" wienerWinSize="5">
+              <posterization-options enabled="0" forceBlackAndWhite="1" level="4" normalizationEnabled="0"/>
+            </color-or-grayscale>
+            <bw binarizationMethod="otsu" morphologicalSmoothing="1" normalizeIlluminationBW="1" sauvolaCoef="0.34" savitzkyGolaySmoothing="1" thresholdAdj="0" windowSize="200" wolfCoef="0.3" wolfLowerBound="1" wolfUpperBound="254">
+              <color-segmenter-options blueThresholdAdjustment="0" enabled="0" greenThresholdAdjustment="0" noiseReduction="7" redThresholdAdjustment="0"/>
+            </bw>
+            <photo-adjustments blacks="0" contrast="0" exposure="0" highlights="0" shadows="0" temp="0" tint="0" whites="0"/>
+          </color-params>
+          <splitting originalBackground="0" splitOutput="0" splittingMode="bw"/>
+        </params>
+        <processing-params autoLevels="0" autoZonesFound="0" blackOnWhiteSetManually="0" brightness="0" contrast="0" passThrough="0"/>
+      </page>
+    </output>
+    <ocr accurate="1" enabled="1" language="" languageCorrection="1"/>
+    <export compressGrayscale="0" maxDpi="400" noDpiLimit="1" quality="1" sendToZotero="0" sendToZoteroExplicit="0">
+      <metadata authors="" creatorRole="author" isbn="" language="" place="" publisher="" title="" year=""/>
+    </export>
+  </filters>
+</project>

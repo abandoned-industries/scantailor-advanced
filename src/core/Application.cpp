@@ -34,6 +34,21 @@ bool Application::event(QEvent* e) {
     emit fileOpenRequested(fileEvent->file());
     return true;
   }
+#ifdef Q_OS_MAC
+  if ((e->type() == QEvent::Quit) && e->spontaneous()) {
+    // A quit request coming from the system (Dock menu, "quit" Apple Event, log out).
+    // Qt's default handler sends a close event to every window and treats a close
+    // event that isn't accepted as a veto of the whole quit. MainWindow always
+    // defers its close (it has to ask about saving the project first), so the
+    // default handler would leave the process running while the deferred close
+    // path went on to close every window. Hand the request to the application's
+    // own quit sequence instead, which closes the windows the normal way and
+    // then exits.
+    e->ignore();  // don't let the platform terminate us behind the close path's back
+    emit quitRequested();
+    return true;
+  }
+#endif
   return QApplication::event(e);
 }
 

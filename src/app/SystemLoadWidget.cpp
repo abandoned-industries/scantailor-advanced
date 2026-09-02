@@ -3,13 +3,12 @@
 
 #include "SystemLoadWidget.h"
 
+#include <core/ApplicationSettings.h>
 #include <core/IconProvider.h>
 
 #include <QSettings>
 #include <QThread>
 #include <QToolTip>
-
-static const char* const key = "settings/batch_processing_threads";
 
 SystemLoadWidget::SystemLoadWidget(QWidget* parent) : QWidget(parent), m_maxThreads(QThread::idealThreadCount()) {
   ui.setupUi(this);
@@ -22,7 +21,7 @@ SystemLoadWidget::SystemLoadWidget(QWidget* parent) : QWidget(parent), m_maxThre
       m_maxThreads = 2;
     }
   }
-  int numThreads = std::min<int>(m_maxThreads, QSettings().value(key, m_maxThreads).toInt());
+  int numThreads = std::min<int>(m_maxThreads, ApplicationSettings::getInstance().getBatchProcessingThreads(m_maxThreads));
 
   ui.slider->setRange(1, m_maxThreads);
   ui.slider->setValue(numThreads);
@@ -43,12 +42,7 @@ void SystemLoadWidget::sliderMoved(int threads) {
 }
 
 void SystemLoadWidget::valueChanged(int threads) {
-  QSettings settings;
-  if (threads == m_maxThreads) {
-    settings.remove(key);
-  } else {
-    settings.setValue(key, threads);
-  }
+  ApplicationSettings::getInstance().setBatchProcessingThreads(threads, m_maxThreads);
 }
 
 void SystemLoadWidget::decreaseLoad() {

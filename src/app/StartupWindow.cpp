@@ -56,7 +56,9 @@ StartupWindow::StartupWindow(QWidget* parent) : QWidget(parent) {
   auto* quitAction = fileMenu->addAction(tr("Quit"));
   quitAction->setShortcut(QKeySequence::Quit);
   quitAction->setMenuRole(QAction::QuitRole);
-  connect(quitAction, &QAction::triggered, qApp, &QApplication::quit);
+  // Routed through the controller so that any open project window gets closed
+  // the normal way (save prompt included) before the application exits.
+  connect(quitAction, &QAction::triggered, this, &StartupWindow::quitRequested);
 
   // Help menu
   auto* helpMenu = m_menuBar->addMenu(tr("&Help"));
@@ -75,9 +77,10 @@ StartupWindow::StartupWindow(QWidget* parent) : QWidget(parent) {
 StartupWindow::~StartupWindow() = default;
 
 void StartupWindow::closeEvent(QCloseEvent* event) {
-  // When the startup window is closed directly, quit the application
+  // When the startup window is closed directly, quit the application. The
+  // controller closes any remaining project window the normal way first.
   event->accept();
-  QApplication::quit();
+  emit quitRequested();
 }
 
 void StartupWindow::showAboutDialog() {

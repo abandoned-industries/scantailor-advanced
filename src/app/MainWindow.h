@@ -19,6 +19,8 @@
 
 #include "AbstractCommand.h"
 #include "BackgroundTask.h"
+#include "BatchSummaries.h"
+#include "PdfExportFlow.h"
 #include "BeforeOrAfter.h"
 #include "FilterResult.h"
 #include "FilterUiInterface.h"
@@ -68,7 +70,11 @@ class QLayout;
 class BatchProcessingSummaryDialog;
 struct BookMetadata;
 
-class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::MainWindow {
+class MainWindow : public QMainWindow,
+                   private FilterUiInterface,
+                   private BatchSummariesContext,
+                   private PdfExportFlowContext,
+                   private Ui::MainWindow {
   DECLARE_NON_COPYABLE(MainWindow)
 
   Q_OBJECT
@@ -87,6 +93,7 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
   void projectClosed();
   void newProjectRequested();
   void quitRequested();
+  void quitAborted();
 
  protected:
   bool eventFilter(QObject* obj, QEvent* ev) override;
@@ -183,7 +190,7 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
   void tiffCompressionSettingChanged(int compression);
   void jpegQualitySettingChanged(int quality);
 
-  void startBatchProcessing();
+  void startBatchProcessing() override;
 
   void startAutoMode();
 
@@ -288,7 +295,7 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
 
   bool isBatchProcessingInProgress() const;
 
-  bool isProjectLoaded() const;
+  bool isProjectLoaded() const override;
 
   bool isBelowSelectContent() const;
 
@@ -306,7 +313,7 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
 
   PageView getCurrentView() const;
 
-  void updateMainArea();
+  void updateMainArea() override;
 
   bool checkReadyForOutput(const PageId* ignore = nullptr) const;
 
@@ -318,9 +325,7 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
 
   void closeProjectWithoutSaving();
 
-  void cleanupTempOutputFiles();
 
-  bool showTempCleanupWarning();
 
   bool saveProjectWithFeedback(const QString& projectFile);
 
@@ -328,7 +333,7 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
 
   QString suggestProjectName() const;
 
-  QString defaultPdfExportPath(const BookMetadata& metadata) const;
+  QString defaultPdfExportPath(const BookMetadata& metadata) const override;
 
   void showInsertFileDialog(BeforeOrAfter beforeOrAfter, const ImageId& existig);
 
@@ -380,12 +385,6 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
   QString autoProcessBreakdown() const;
   void applyAutoProcessColorSettings();
   void resetAutoProcessColorPolicy();
-  void autoAcceptPageSplit();
-  void autoSetDeskewZero();
-  void autoAcceptContentOutliers();
-  void autoAcceptPageSizeOutliers();
-
-  void jumpToPageFromSummary(const ImageId& imageId);
 
   void forceTwoPageForImages(const std::vector<ImageId>& imageIds);
 
@@ -395,17 +394,22 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
 
   void showContentCoverageSummary();
 
-  void jumpToPageFromContentSummary(const PageId& pageId);
-
   void preserveLayoutForPages(const std::vector<PageId>& pageIds);
 
   void showPageSizeWarning();
 
-  void jumpToPageFromPageSizeWarning(const PageId& pageId);
-
-  void goToPageSplitFromWarning();
-
   void disableAlignmentForPages(const std::vector<PageId>& pageIds);
+
+  // BatchSummariesContext / PdfExportFlowContext:
+  StageSequence* stages() const override;
+  PageSequence exportPageSequence() const override;
+  const OutputFileNameGenerator& outFileNameGen() const override;
+  ProjectPages* pages() const override;
+  ThumbnailSequence* thumbSequence() const override;
+  PageView currentView() const override;
+  int currentFilterIndex() const override;
+  void jumpToPage(const PageId& pageId) override;
+  void selectFilterListRow(int row) override;
 
   QSizeF m_maxLogicalThumbSize;
   std::shared_ptr<ProjectPages> m_pages;
@@ -418,6 +422,8 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
   OutputFileNameGenerator m_outFileNameGen;
   std::shared_ptr<ThumbnailPixmapCache> m_thumbnailCache;
   std::unique_ptr<ThumbnailSequence> m_thumbSequence;
+  std::unique_ptr<BatchSummaries> m_batchSummaries;
+  std::unique_ptr<PdfExportFlow> m_pdfExportFlow;
   std::unique_ptr<WorkerThreadPool> m_workerThreadPool;
   std::unique_ptr<ProcessingTaskQueue> m_batchQueue;
   std::unique_ptr<ProcessingTaskQueue> m_interactiveQueue;

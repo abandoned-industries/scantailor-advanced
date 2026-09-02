@@ -23,6 +23,7 @@ class StartupWindow : public QWidget {
   void importPdfRequested();
   void importFolderRequested();
   void recentProjectRequested(const QString& path);
+  void quitRequested();
 
  protected:
   void closeEvent(QCloseEvent* event) override;

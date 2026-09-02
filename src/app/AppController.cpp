@@ -21,6 +21,15 @@
 #include "StartupWindow.h"
 #include "ZoteroLoopSidecar.h"
 
+namespace {
+// Ends the event loop directly. QApplication::quit() asks the platform to quit,
+// which on macOS comes back as another system quit request and lands in
+// Application::event(QEvent::Quit) - the very request this quit sequence serves.
+void exitApplication() {
+  QCoreApplication::exit(0);
+}
+}  // namespace
+
 AppController::AppController(QObject* parent) : QObject(parent) {}
 
 AppController::~AppController() = default;
@@ -70,6 +79,7 @@ void AppController::openPdfFile(const QString& pdfFile, const QString& projectDi
   const PdfReader::PdfInfo pdfInfo = PdfReader::readPdfInfo(pdfFile);
   if (pdfInfo.pageCount == 0) {
     QMessageBox::warning(nullptr, tr("Error"), PdfReadError::message(pdfFile));
+    ensureWindowVisible();
     return;
   }
 
@@ -79,6 +89,7 @@ void AppController::openPdfFile(const QString& pdfFile, const QString& projectDi
     // Show DPI selection dialog during normal interactive imports.
     PdfImportDialog dialog(nullptr, pdfFile, pdfInfo.pageCount, pdfInfo.detectedDpi);
     if (dialog.exec() != QDialog::Accepted) {
+      ensureWindowVisible();
       return;  // User cancelled
     }
     selectedDpi = dialog.selectedDpi();
@@ -111,6 +122,15 @@ void AppController::showStartupWindow() {
   m_startupWindow->show();
   m_startupWindow->raise();
   m_startupWindow->activateWindow();
+}
+
+void AppController::ensureWindowVisible() {
+  // Never leave the application running without a single window: with
+  // quitOnLastWindowClosed disabled there would be no way to get back to it and
+  // no way to quit it.
+  if (!hasActiveMainWindows() && (!m_startupWindow || !m_startupWindow->isVisible())) {
+    showStartupWindow();
+  }
 }
 
 MainWindow* AppController::createNewMainWindow() {
@@ -168,12 +188,14 @@ void AppController::connectStartupWindow() {
   connect(m_startupWindow, &StartupWindow::importPdfRequested, this, &AppController::onImportPdfRequested);
   connect(m_startupWindow, &StartupWindow::importFolderRequested, this, &AppController::onImportFolderRequested);
   connect(m_startupWindow, &StartupWindow::recentProjectRequested, this, &AppController::onRecentProjectRequested);
+  connect(m_startupWindow, &StartupWindow::quitRequested, this, &AppController::quitApplication);
 }
 
 void AppController::connectMainWindow(MainWindow* window) {
   connect(window, &MainWindow::projectClosed, this, &AppController::onMainWindowProjectClosed);
   connect(window, &MainWindow::newProjectRequested, this, &AppController::onNewProjectFromMainWindow);
-  connect(window, &MainWindow::quitRequested, this, &AppController::onQuitRequested);
+  connect(window, &MainWindow::quitRequested, this, &AppController::quitApplication);
+  connect(window, &MainWindow::quitAborted, this, &AppController::onQuitAborted);
   connect(window, &QObject::destroyed, this, [this, window]() {
     removeMainWindow(window);
   });
@@ -185,7 +207,7 @@ void AppController::removeMainWindow(MainWindow* window) {
   // If no more windows, either quit or show startup
   if (!hasActiveMainWindows()) {
     if (m_quitting) {
-      QApplication::quit();
+      exitApplication();
     } else {
       showStartupWindow();
     }
@@ -303,7 +325,13 @@ void AppController::onNewProjectFromMainWindow() {
   showStartupWindow();
 }
 
-void AppController::onQuitRequested() {
+void AppController::onQuitAborted() {
+  // A window refused to close (the user cancelled its save prompt), so the quit
+  // sequence is off and the application stays running with that window open.
+  m_quitting = false;
+}
+
+void AppController::quitApplication() {
   m_quitting = true;  // Mark that we're in a quit sequence
 
   // Schedule the quit chain to continue after the current window finishes closing.
@@ -315,12 +343,13 @@ void AppController::onQuitRequested() {
       MainWindow* window = qobject_cast<MainWindow*>(widget);
       if (window && window->isVisible()) {
         // Connect this window's quitRequested signal so the chain continues
-        connect(window, &MainWindow::quitRequested, this, &AppController::onQuitRequested, Qt::UniqueConnection);
+        connect(window, &MainWindow::quitRequested, this, &AppController::quitApplication, Qt::UniqueConnection);
+        connect(window, &MainWindow::quitAborted, this, &AppController::onQuitAborted, Qt::UniqueConnection);
         window->quitApp();  // This will trigger its save prompt
         return;  // Wait for this window to finish before closing the next
       }
     }
     // No more visible MainWindows - quit the application
-    QApplication::quit();
+    exitApplication();
   });
 }

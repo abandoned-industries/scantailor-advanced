@@ -8,8 +8,17 @@
 
 #include <cmath>
 #include <functional>
+#include <mutex>
 #include <unordered_map>
 
+// Threading contract: writers (worker threads, via the owning Settings object)
+// and readers (GUI thread: CacheDrivenTask::process during thumbnail creation,
+// OrderByDeviationProvider during sorts) may call into this class
+// concurrently. All state — the key/value map and the lazily recomputed
+// mean/stddev cache — is guarded by an internal mutex, so the const getters
+// are safe to call without external locking. The computeValueByKey callback
+// is invoked OUTSIDE the internal mutex (callers typically invoke addOrUpdate
+// while holding their own Settings mutex, which the callback may rely on).
 template <typename K, typename Hash = std::hash<K>>
 class DeviationProvider {
   DECLARE_NON_COPYABLE(DeviationProvider)
@@ -33,11 +42,16 @@ class DeviationProvider {
   void setComputeValueByKey(const std::function<double(const K&)>& computeValueByKey);
 
  protected:
+  // Recomputes the cached statistics. Must be called with m_mutex held.
   void update() const;
 
  private:
   std::function<double(const K&)> m_computeValueByKey;
   std::unordered_map<K, double, Hash> m_keyValueMap;
+
+  // Guards m_keyValueMap and the cached values below (see the threading
+  // contract at the top of the class).
+  mutable std::mutex m_mutex;
 
   // Cached values.
   mutable bool m_needUpdate = false;
@@ -52,6 +66,7 @@ DeviationProvider<K, Hash>::DeviationProvider(const std::function<double(const K
 
 template <typename K, typename Hash>
 bool DeviationProvider<K, Hash>::isDeviant(const K& key, double coefficient, double threshold, bool defaultVal) const {
+  const std::lock_guard<std::mutex> lock(m_mutex);
   if (m_keyValueMap.find(key) == m_keyValueMap.end()) {
     return false;
   }
@@ -71,6 +86,7 @@ bool DeviationProvider<K, Hash>::isDeviant(const K& key, double coefficient, dou
 
 template <typename K, typename Hash>
 double DeviationProvider<K, Hash>::getDeviationValue(const K& key) const {
+  const std::lock_guard<std::mutex> lock(m_mutex);
   if (m_keyValueMap.find(key) == m_keyValueMap.end()) {
     return -1.0;
   }
@@ -89,13 +105,24 @@ double DeviationProvider<K, Hash>::getDeviationValue(const K& key) const {
 
 template <typename K, typename Hash>
 void DeviationProvider<K, Hash>::addOrUpdate(const K& key) {
+  // Invoke the callback outside the internal mutex (threading contract),
+  // via a copy taken under the lock.
+  std::function<double(const K&)> computeValueByKey;
+  {
+    const std::lock_guard<std::mutex> lock(m_mutex);
+    computeValueByKey = m_computeValueByKey;
+  }
+  const double value = computeValueByKey(key);
+
+  const std::lock_guard<std::mutex> lock(m_mutex);
   m_needUpdate = true;
 
-  m_keyValueMap[key] = m_computeValueByKey(key);
+  m_keyValueMap[key] = value;
 }
 
 template <typename K, typename Hash>
 void DeviationProvider<K, Hash>::addOrUpdate(const K& key, const double value) {
+  const std::lock_guard<std::mutex> lock(m_mutex);
   m_needUpdate = true;
 
   m_keyValueMap[key] = value;
@@ -103,6 +130,7 @@ void DeviationProvider<K, Hash>::addOrUpdate(const K& key, const double value) {
 
 template <typename K, typename Hash>
 void DeviationProvider<K, Hash>::remove(const K& key) {
+  const std::lock_guard<std::mutex> lock(m_mutex);
   m_needUpdate = true;
 
   if (m_keyValueMap.find(key) == m_keyValueMap.end()) {
@@ -147,11 +175,13 @@ void DeviationProvider<K, Hash>::update() const {
 
 template <typename K, typename Hash>
 void DeviationProvider<K, Hash>::setComputeValueByKey(const std::function<double(const K&)>& computeValueByKey) {
+  const std::lock_guard<std::mutex> lock(m_mutex);
   this->m_computeValueByKey = std::move(computeValueByKey);
 }
 
 template <typename K, typename Hash>
 void DeviationProvider<K, Hash>::clear() {
+  const std::lock_guard<std::mutex> lock(m_mutex);
   m_keyValueMap.clear();
 
   m_needUpdate = false;

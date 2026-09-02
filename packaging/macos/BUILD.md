@@ -1,148 +1,105 @@
-# Building ScanTailor Advanced for macOS
+# Building ScanTailor Spectre for macOS
 
-This guide covers building ScanTailor Advanced on macOS, specifically targeting Apple Silicon (ARM64) Macs.
+ScanTailor Spectre is a macOS-only fork of ScanTailor Advanced (macOS 15+,
+Apple Silicon). This is a **build** guide only.
+
+> **Signing, notarization, stapling, DMG/ZIP release artifacts, and
+> GitHub publication are covered exclusively by `SIGNING.md` at the repo
+> root.** That document is authoritative; nothing in this file or in
+> `create-dmg.sh` replaces it.
+
+## Source
+
+Development happens in the **private checkout** (remote `origin`, a
+private forge). The GitHub repository is a sanitized
+public snapshot, not the development history — do not build releases from it
+and never push private history to it (see `SIGNING.md`).
 
 ## Prerequisites
 
-### Install Xcode Command Line Tools
+Xcode command line tools and Homebrew, then:
 
 ```bash
 xcode-select --install
+brew install cmake qt6 boost libtiff libpng jpeg leptonica
 ```
 
-### Install Homebrew
+Qt 6 must include the WebEngine/WebChannel modules; the Homebrew `qt6`
+metapackage provides them.
 
-If you don't have Homebrew installed:
+## Configure
+
+The canonical build directory is `build/` at the repo root — always. Do not
+create ad-hoc build directories. Leptonica is found via pkg-config, so the
+configure step needs `PKG_CONFIG_PATH`:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+cd <repo root>
+PKG_CONFIG_PATH=/opt/homebrew/lib/pkgconfig cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=$(brew --prefix qt6) \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
 ```
 
-### Install Dependencies
+Distribution builds additionally set `-DPORTABLE_VERSION=OFF`
+(see `SIGNING.md`).
+
+## Build targets
+
+Two targets, two purposes:
+
+- **`scantailor`** — fast incremental app build for day-to-day development:
+
+  ```bash
+  cmake --build build --target scantailor -j$(sysctl -n hw.ncpu)
+  ```
+
+- **`scantailor_bundle`** — the explicit bundle/deploy step: rebuilds the
+  app, runs `macdeployqt`, fixes bundled library paths, and ad-hoc signs the
+  finished bundle. Run it only when preparing a distributable bundle, not on
+  every incremental build:
+
+  ```bash
+  cmake --build build --target scantailor_bundle
+  ```
+
+Tests:
 
 ```bash
-brew install cmake qt6 boost libtiff libpng jpeg zlib libharu
+cd build && ctest --output-on-failure
 ```
 
-**Note:** `libharu` is optional but highly recommended - it enables optimized PDF compression that can reduce file sizes by 10-20x compared to the fallback Qt-based export.
+## Hazard: never run macdeployqt by hand on the app inside build/
 
-## Building
+Do **not** invoke `macdeployqt` manually on
+`build/ScanTailor Spectre.app`. A hand-deployed bundle inside `build/`
+breaks every later incremental dev build: the fresh executable links
+Homebrew Qt while the stale bundled `qt.conf`/`PlugIns` force the old cocoa
+plugin, and the app aborts at launch (`qt.qpa.plugin` cocoa error). Deploy
+only via the `scantailor_bundle` target, or onto a *copy* staged outside
+`build/`.
 
-### 1. Clone the Repository
+Cure if it happens — remove the stale deployment from the build/ app:
 
 ```bash
-git clone https://github.com/4lex4/scantailor-advanced.git
-cd scantailor-advanced
+cd "build/ScanTailor Spectre.app"
+rm -rf Contents/Frameworks Contents/PlugIns Contents/Resources/qt.conf Contents/Resources/qml
 ```
 
-### 2. Create Build Directory
+## Unsigned DMG for local testing
 
-```bash
-mkdir build && cd build
-```
-
-### 3. Configure with CMake
-
-```bash
-cmake -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_PREFIX_PATH=$(brew --prefix qt6) \
-      ..
-```
-
-### 4. Build
-
-```bash
-make -j$(sysctl -n hw.ncpu)
-```
-
-After building, you'll find `ScanTailor Advanced.app` in the build directory.
-
-## Creating a DMG for Distribution
-
-Use the provided script to create a distributable DMG:
-
-```bash
-cd packaging/macos
-./create-dmg.sh /path/to/build/directory
-```
-
-This will create `ScanTailor-Advanced-X.Y.Z.dmg` in the current directory.
-
-## Code Signing
-
-### For Local Use (Ad-hoc Signing)
-
-The build process automatically applies ad-hoc signing, which is sufficient for running on your own machine.
-
-### For Distribution
-
-To distribute the app to other users, you'll need an Apple Developer ID certificate:
-
-```bash
-codesign --force --deep --sign "Developer ID Application: Your Name (TEAM_ID)" "ScanTailor Advanced.app"
-```
-
-## Universal Binary (ARM64 + x86_64)
-
-To build a universal binary that runs on both Apple Silicon and Intel Macs:
-
-```bash
-cmake -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_PREFIX_PATH=$(brew --prefix qt6) \
-      -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-      ..
-make -j$(sysctl -n hw.ncpu)
-```
-
-Note: All dependencies must also be universal binaries for this to work.
+`packaging/macos/create-dmg.sh` stages the built app (plus the bundled
+Zotero companion plugin) into an **unsigned** DMG for local testing. It
+performs no signing or notarization. For any artifact that leaves this
+machine, follow `SIGNING.md` end to end instead: Developer ID component
+signing, notarization with the machine-wide `notary` keychain profile,
+stapling, identically timestamped ZIP + DMG, and mounted-DMG verification.
 
 ## Troubleshooting
 
-### Qt not found
-
-Make sure Qt6 is installed and CMAKE_PREFIX_PATH is set correctly:
-
-```bash
-brew reinstall qt6
-cmake -DCMAKE_PREFIX_PATH=$(brew --prefix qt6) ..
-```
-
-### Library not loaded errors
-
-If you get "Library not loaded" errors when running the app, the bundle may not have been properly created. Ensure macdeployqt ran successfully during the build.
-
-### Code signing errors
-
-For ad-hoc signing issues:
-
-```bash
-codesign --force --deep --sign - "ScanTailor Advanced.app"
-```
-
-## Development Notes
-
-### Project Structure
-
-- `src/app/` - Main application source code
-- `src/core/` - Core processing library
-- `packaging/macos/` - macOS-specific packaging files
-
-### Useful CMake Options
-
-- `-DCMAKE_BUILD_TYPE=Debug` - Build with debug symbols
-- `-DPORTABLE_VERSION=ON` - Build portable version (default)
-- `-DDEVELOPER_VERSION=ON` - Enable debug features
-
-### Running from Build Directory
-
-After building, you can run the app directly:
-
-```bash
-open "ScanTailor Advanced.app"
-```
-
-Or from the command line:
-
-```bash
-"./ScanTailor Advanced.app/Contents/MacOS/scantailor"
-```
+- **Qt not found**: check `brew --prefix qt6` and re-run configure with
+  `-DCMAKE_PREFIX_PATH=$(brew --prefix qt6)`.
+- **Leptonica not found**: the configure step was run without
+  `PKG_CONFIG_PATH=/opt/homebrew/lib/pkgconfig`.
+- **App aborts at launch with a cocoa plugin error**: see the macdeployqt
+  hazard above.

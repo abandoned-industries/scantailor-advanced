@@ -7,6 +7,7 @@
 #include <QThreadPool>
 #include <utility>
 
+#include "ApplicationSettings.h"
 #include "BatchProcessingContext.h"
 #include "OutOfMemoryHandler.h"
 
@@ -108,7 +109,7 @@ void WorkerThreadPool::updateNumberOfThreads() {
     maxThreads = std::min(maxThreads, 2);
   }
 
-  int numThreads = m_settings.value("settings/batch_processing_threads", maxThreads).toInt();
+  int numThreads = ApplicationSettings::getInstance().getBatchProcessingThreads(maxThreads);
   bool overrideOk = false;
   const int overrideThreads = qEnvironmentVariableIntValue("SCANTAILOR_BATCH_THREADS", &overrideOk);
   if (overrideOk) {

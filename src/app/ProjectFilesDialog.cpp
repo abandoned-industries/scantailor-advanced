@@ -172,6 +172,15 @@ ProjectFilesDialog::ProjectFilesDialog(QWidget* parent)
   m_supportedExtensions.insert("tif");
   m_supportedExtensions.insert("tiff");
   m_supportedExtensions.insert("pdf");
+  m_supportedExtensions.insert("jp2");
+  m_supportedExtensions.insert("heic");
+  m_supportedExtensions.insert("heif");
+  m_supportedExtensions.insert("webp");
+  m_supportedExtensions.insert("bmp");
+  m_supportedExtensions.insert("gif");
+  m_supportedExtensions.insert("pbm");
+  m_supportedExtensions.insert("pgm");
+  m_supportedExtensions.insert("ppm");
 
   setupUi(this);
 

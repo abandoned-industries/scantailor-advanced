@@ -675,7 +675,7 @@ BOOST_AUTO_TEST_CASE(test_hmr_1) {
 }
 
 // Parity tests: the public dilateGray/erodeGray entry points auto-select
-// accelerated implementations (vImage/Metal on macOS) when dstArea covers the
+// accelerated implementations (vImage on macOS) when dstArea covers the
 // whole image. These tests pit that path against a forced-CPU reference on
 // random data. The reference is obtained without any test-only hooks: the
 // source is padded with a 1-pixel border of the neutral value (0xff for the

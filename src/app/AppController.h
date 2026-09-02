@@ -29,6 +29,7 @@ class AppController : public QObject {
 
  public slots:
   void showStartupWindow();
+  void quitApplication();
 
  private slots:
   void onOpenProjectRequested();
@@ -38,10 +39,11 @@ class AppController : public QObject {
   void onMainWindowProjectClosed();
   void onNewProjectFromMainWindow();
   void onProjectCreationDone(ProjectCreationContext* context);
-  void onQuitRequested();
+  void onQuitAborted();
 
  private:
   MainWindow* createNewMainWindow();
+  void ensureWindowVisible();
   void connectStartupWindow();
   void connectMainWindow(MainWindow* window);
   void removeMainWindow(MainWindow* window);

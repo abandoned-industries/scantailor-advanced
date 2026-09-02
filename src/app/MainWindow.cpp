@@ -50,6 +50,9 @@
 #include "AbstractOutputTask.h"
 #include "AbstractRelinker.h"
 #include "Application.h"
+#include "AutoAccept.h"
+#include "BenchmarkLog.h"
+#include "TempOutputCleanup.h"
 #include "ProjectFolder.h"
 #include "ProjectFolderRelinker.h"
 #include "AutoRemovingFile.h"
@@ -162,184 +165,6 @@
 
 using namespace core;
 
-namespace {
-bool benchmarkAutoEnabled() {
-  bool ok = false;
-  const int value = qEnvironmentVariableIntValue("SCANTAILOR_BENCHMARK_AUTO", &ok);
-  return ok && value != 0;
-}
-
-bool benchmarkOcrEnabled() {
-  bool ok = false;
-  const int value = qEnvironmentVariableIntValue("SCANTAILOR_BENCHMARK_OCR", &ok);
-  return ok && value != 0;
-}
-
-bool useLegacyAutoProcessSequence() {
-  bool ok = false;
-  const int value = qEnvironmentVariableIntValue("SCANTAILOR_LEGACY_AUTO_PROCESS_SEQUENCE", &ok);
-  return ok && value != 0;
-}
-
-struct BenchmarkOcrMetrics {
-  qint64 processedPages = 0;
-  qint64 blocks = 0;
-  qint64 characters = 0;
-  double meanConfidence = 0.0;
-  QString textSha256;
-  QJsonArray pages;
-};
-
-void writeBenchmarkResult(const bool completed,
-                          const qint64 totalMilliseconds,
-                          const size_t pageCount,
-                          const std::array<qint64, 7>& stageMilliseconds,
-                          const ImageLoader::Statistics& imageLoadStats,
-                          const BenchmarkOcrMetrics& ocrMetrics) {
-  const QString resultPath = qEnvironmentVariable("SCANTAILOR_BENCHMARK_RESULT_PATH");
-  if (resultPath.isEmpty()) {
-    return;
-  }
-
-  QJsonObject stages{
-      {QStringLiteral("split"), stageMilliseconds[0]},
-      {QStringLiteral("deskew"), stageMilliseconds[1]},
-      {QStringLiteral("page_box"), stageMilliseconds[2]},
-      {QStringLiteral("select_content"), stageMilliseconds[3]},
-      {QStringLiteral("page_layout"), stageMilliseconds[4]},
-      {QStringLiteral("output"), stageMilliseconds[5]},
-      {QStringLiteral("ocr"), stageMilliseconds[6]}
-  };
-  QJsonObject imageLoads{
-      {QStringLiteral("cache_hits"), static_cast<qint64>(imageLoadStats.cacheHits)},
-      {QStringLiteral("unique_misses"), static_cast<qint64>(imageLoadStats.cacheMisses)},
-      {QStringLiteral("leader_decodes"), static_cast<qint64>(imageLoadStats.leaderDecodes)},
-      {QStringLiteral("coalesced_waiters"), static_cast<qint64>(imageLoadStats.coalescedWaiters)},
-      {QStringLiteral("pdf_rasterizations"), static_cast<qint64>(imageLoadStats.pdfRasterizations)},
-      {QStringLiteral("decoded_bytes"), static_cast<qint64>(imageLoadStats.decodedBytes)}
-  };
-  QJsonObject ocr{
-      {QStringLiteral("processed_pages"), ocrMetrics.processedPages},
-      {QStringLiteral("blocks"), ocrMetrics.blocks},
-      {QStringLiteral("characters"), ocrMetrics.characters},
-      {QStringLiteral("mean_confidence"), ocrMetrics.meanConfidence},
-      {QStringLiteral("text_sha256"), ocrMetrics.textSha256}
-  };
-  if (!ocrMetrics.pages.isEmpty()) {
-    ocr.insert(QStringLiteral("pages"), ocrMetrics.pages);
-  }
-  const QJsonObject result{
-      {QStringLiteral("completed"), completed},
-      {QStringLiteral("total_ms"), totalMilliseconds},
-      {QStringLiteral("page_count"), static_cast<qint64>(pageCount)},
-      {QStringLiteral("stages_ms"), stages},
-      {QStringLiteral("image_loads"), imageLoads},
-      {QStringLiteral("ocr"), ocr},
-      {QStringLiteral("legacy_sequence"), useLegacyAutoProcessSequence()}
-  };
-
-  QSaveFile file(resultPath);
-  if (!file.open(QIODevice::WriteOnly)
-      || file.write(QJsonDocument(result).toJson(QJsonDocument::Compact)) < 0
-      || !file.commit()) {
-    qWarning() << "Failed to write benchmark result:" << resultPath << file.errorString();
-  }
-}
-
-bool isSpectreTempOutputDir(const QString& path) {
-  if (path.isEmpty()) {
-    return false;
-  }
-  const QString tempPrefix = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                                 .absoluteFilePath(QStringLiteral("scantailor-spectre-"));
-  return QDir::cleanPath(path).startsWith(QDir::cleanPath(tempPrefix));
-}
-
-void showExportSuccessDialog(QWidget* parent, const QString& pdfPath, const QString& message) {
-  QMessageBox msgBox(parent);
-  msgBox.setIcon(QMessageBox::Information);
-  msgBox.setWindowTitle(QObject::tr("Export to PDF"));
-  msgBox.setText(message);
-  QPushButton* revealButton = msgBox.addButton(QObject::tr("Reveal in Finder"), QMessageBox::ActionRole);
-  msgBox.addButton(QMessageBox::Ok);
-  msgBox.setDefaultButton(QMessageBox::Ok);
-  msgBox.exec();
-  if (msgBox.clickedButton() == revealButton) {
-    QProcess::startDetached("open", {"-R", pdfPath});
-  }
-}
-
-void showExportSuccessDialog(QWidget* parent, const QString& pdfPath, int pageCount, const QString& sizeStr) {
-  showExportSuccessDialog(
-      parent, pdfPath,
-      QObject::tr("Successfully exported %1 pages to PDF.\nFile size: %2").arg(pageCount).arg(sizeStr));
-}
-
-struct PdfExportRunResult {
-  bool success = false;
-  bool cancelled = false;
-};
-
-PdfExportRunResult runPdfExportInBackground(
-    QWidget* parent,
-    int pageCount,
-    const std::function<bool(const PdfExporter::ProgressCallback&)>& exportFunction) {
-  QProgressDialog progressDialog(
-      QObject::tr("Exporting to PDF..."), QObject::tr("Cancel"), 0, pageCount, parent);
-  progressDialog.setWindowModality(Qt::WindowModal);
-  progressDialog.setMinimumDuration(0);
-  progressDialog.setAutoClose(false);
-  progressDialog.setAutoReset(false);
-  progressDialog.setValue(0);
-
-  auto cancellationRequested = std::make_shared<std::atomic_bool>(false);
-  const QMetaObject::Connection cancellationConnection
-      = QObject::connect(&progressDialog, &QProgressDialog::canceled, [&] {
-    cancellationRequested->store(true, std::memory_order_relaxed);
-    progressDialog.setLabelText(QObject::tr("Cancelling export..."));
-    progressDialog.setCancelButton(nullptr);
-  });
-
-  QFutureWatcher<bool> watcher;
-  QEventLoop waitLoop;
-  QObject::connect(&watcher, &QFutureWatcher<bool>::finished, &waitLoop, &QEventLoop::quit);
-
-  watcher.setFuture(QtConcurrent::run([&progressDialog, cancellationRequested, exportFunction]() {
-    const PdfExporter::ProgressCallback progressCallback =
-        [&progressDialog, cancellationRequested](int current, int total) {
-          if (cancellationRequested->load(std::memory_order_relaxed)) {
-            return false;
-          }
-          QMetaObject::invokeMethod(
-              &progressDialog,
-              [&progressDialog, current, total] {
-                progressDialog.setMaximum(total);
-                progressDialog.setValue(qMin(current, total));
-                progressDialog.setLabelText(
-                    QObject::tr("Exporting page %1 of %2...").arg(current).arg(total));
-              },
-              Qt::QueuedConnection);
-          return !cancellationRequested->load(std::memory_order_relaxed);
-        };
-    return exportFunction(progressCallback);
-  }));
-
-  progressDialog.show();
-  if (!watcher.isFinished()) {
-    waitLoop.exec();
-  }
-
-  // QProgressDialog::close() emits canceled() even when the background export
-  // completed successfully. Snapshot the worker result and disconnect the
-  // user-cancellation handler before closing the dialog programmatically.
-  const bool success = watcher.result();
-  const bool cancelled = cancellationRequested->load(std::memory_order_relaxed);
-  QObject::disconnect(cancellationConnection);
-  progressDialog.close();
-  return {success, cancelled};
-}
-
-}  // namespace
 
 class MainWindow::PageSelectionProviderImpl : public PageSelectionProvider {
  public:
@@ -381,6 +206,8 @@ MainWindow::MainWindow(bool restoreGeometry)
                                                    ? ThumbnailSequence::SINGLE_COLUMN
                                                    : ThumbnailSequence::MULTI_COLUMN;
   m_thumbSequence = std::make_unique<ThumbnailSequence>(m_maxLogicalThumbSize, viewMode);
+  m_batchSummaries = std::make_unique<BatchSummaries>(static_cast<BatchSummariesContext&>(*this), this);
+  m_pdfExportFlow = std::make_unique<PdfExportFlow>(static_cast<PdfExportFlowContext&>(*this), this);
 
   m_autoSaveTimer.setSingleShot(true);
   connect(&m_autoSaveTimer, SIGNAL(timeout()), SLOT(autoSaveProject()));
@@ -967,6 +794,14 @@ void MainWindow::timerEvent(QTimerEvent* const event) {
   const bool closeAccepted = closeProjectInteractive();
   if (!closeAccepted) {
     m_closeEventPending = false;
+#ifdef Q_OS_MAC
+    // The user cancelled the save prompt: the window stays open, and so does the
+    // application, even if this close was part of a quit sequence.
+    if (m_quitting) {
+      m_quitting = false;
+      emit quitAborted();
+    }
+#endif
   }
   if (closeAccepted) {
 #ifdef Q_OS_MAC
@@ -1007,9 +842,11 @@ void MainWindow::timerEvent(QTimerEvent* const event) {
           break;  // One at a time
         }
       }
-      // If no other windows found, schedule app quit
+      // If no other windows found, schedule app quit. Exiting the event loop
+      // directly rather than through QApplication::quit(), which would ask the
+      // platform to quit and come back as another system quit request.
       if (!foundOther) {
-        QTimer::singleShot(0, qApp, &QApplication::quit);
+        QTimer::singleShot(0, qApp, []() { QCoreApplication::exit(0); });
       }
     }
 #endif
@@ -1831,8 +1668,8 @@ void MainWindow::startAutoMode() {
   bool autoFastOcr = true;
   bool autoMultilingualOcr = false;
   bool autoSkipOcrLanguageCorrection = true;
-  if (benchmarkAutoEnabled()) {
-    m_autoModeIncludeOcr = benchmarkOcrEnabled();
+  if (benchmark::benchmarkAutoEnabled()) {
+    m_autoModeIncludeOcr = benchmark::benchmarkOcrEnabled();
     m_autoModeRedetectColor = true;
   } else {
     AutoProcessDialog dialog(this);
@@ -1850,7 +1687,7 @@ void MainWindow::startAutoMode() {
   if (m_autoModeIncludeOcr) {
     auto ocrSettings = m_stages->ocrFilter()->settings();
     ocrSettings->setOcrEnabled(true);
-    if (benchmarkAutoEnabled()) {
+    if (benchmark::benchmarkAutoEnabled()) {
       bool accurateOk = false;
       const int accurate =
           qEnvironmentVariableIntValue("SCANTAILOR_BENCHMARK_OCR_ACCURATE", &accurateOk);
@@ -1915,15 +1752,15 @@ void MainWindow::autoModeAdvance() {
 
   switch (m_autoModeStage) {
     case AUTO_PAGE_SPLIT:
-      autoAcceptPageSplit();
+      auto_accept::autoAcceptPageSplit(*m_stages, *m_pages, *m_batchSummaries);
       recordCurrentAutoStageTime();
 
-      if (!useLegacyAutoProcessSequence()) {
+      if (!benchmark::useLegacyAutoProcessSequence()) {
         // Auto Process has always discarded every detected deskew angle by
         // replacing it with manual zero. Set that policy now, then let the
         // Select Content composite run deskew pass-through, Page Box, and
         // content detection from one source load.
-        autoSetDeskewZero();
+        auto_accept::autoSetDeskewZero(*m_stages, *m_pages, getCurrentView());
         m_autoModeStage = AUTO_SELECT_CONTENT;
         m_autoStageTimer.start();
         filterList->selectRow(m_stages->selectContentFilterIdx());
@@ -1942,7 +1779,7 @@ void MainWindow::autoModeAdvance() {
       break;
 
     case AUTO_DESKEW:
-      autoSetDeskewZero();
+      auto_accept::autoSetDeskewZero(*m_stages, *m_pages, getCurrentView());
       recordCurrentAutoStageTime();
       m_autoModeStage = AUTO_PAGE_BOX;
       m_autoStageTimer.start();
@@ -1962,7 +1799,7 @@ void MainWindow::autoModeAdvance() {
       break;
 
     case AUTO_SELECT_CONTENT:
-      autoAcceptContentOutliers();
+      auto_accept::autoAcceptContentOutliers(*m_stages, *m_pages, getCurrentView(), *m_batchSummaries);
       recordCurrentAutoStageTime();
       m_autoModeStage = AUTO_PAGE_LAYOUT;
       m_autoStageTimer.start();
@@ -1972,7 +1809,7 @@ void MainWindow::autoModeAdvance() {
       break;
 
     case AUTO_PAGE_LAYOUT:
-      autoAcceptPageSizeOutliers();
+      auto_accept::autoAcceptPageSizeOutliers(*m_stages, *m_batchSummaries);
       // Page Split may have changed the set of PageIds since the run began.
       // Reapply the preset now so every final page is authoritative.
       if (m_autoModeRedetectColor) {
@@ -2125,86 +1962,16 @@ void MainWindow::finishAutoProcess(const bool completed) {
              .arg(imageLoadStats.coalescedWaiters)
              .arg(imageLoadStats.pdfRasterizations)
              .arg(imageLoadStats.decodedBytes / (1024.0 * 1024.0), 0, 'f', 1);
-  BenchmarkOcrMetrics ocrMetrics;
-  if (benchmarkAutoEnabled() && m_autoModeIncludeOcr) {
-    QCryptographicHash textHash(QCryptographicHash::Sha256);
-    QByteArray recognizedText;
-    double confidenceTotal = 0.0;
-    const auto ocrSettings = m_stages->ocrFilter()->settings();
-    const PageSequence pages = m_pages->toPageSequence(PAGE_VIEW);
-    for (size_t pageIndex = 0; pageIndex < pages.numPages(); ++pageIndex) {
-      const PageInfo& page = pages.pageAt(pageIndex);
-      const std::unique_ptr<ocr::OcrResult> result = ocrSettings->getOcrResult(page.id());
-      if (!result) {
-        continue;
-      }
-      ++ocrMetrics.processedPages;
-      QCryptographicHash pageTextHash(QCryptographicHash::Sha256);
-      qint64 pageBlocks = 0;
-      qint64 pageCharacters = 0;
-      qint64 lowConfidenceBlocks = 0;
-      double pageConfidenceTotal = 0.0;
-      double minimumConfidence = 1.0;
-      double coveredArea = 0.0;
-      textHash.addData(QByteArrayView("\x1e", 1));
-      recognizedText += "\n\fPAGE ";
-      recognizedText += QByteArray::number(pageIndex + 1);
-      recognizedText += "\n";
-      for (const ocr::OcrWord& word : result->words()) {
-        ++pageBlocks;
-        pageCharacters += word.text.size();
-        pageConfidenceTotal += word.confidence;
-        minimumConfidence = std::min(minimumConfidence, static_cast<double>(word.confidence));
-        lowConfidenceBlocks += word.confidence < 0.5f;
-        coveredArea += word.boundingBox.width() * word.boundingBox.height();
-        pageTextHash.addData(word.text.toUtf8());
-        pageTextHash.addData(QByteArrayView("\x1f", 1));
-        ++ocrMetrics.blocks;
-        ocrMetrics.characters += word.text.size();
-        confidenceTotal += word.confidence;
-        textHash.addData(word.text.toUtf8());
-        textHash.addData(QByteArrayView("\x1f", 1));
-        recognizedText += word.text.toUtf8();
-        recognizedText += '\n';
-      }
-      const double imageArea =
-          static_cast<double>(result->imageWidth()) * result->imageHeight();
-      ocrMetrics.pages.append(QJsonObject{
-          {QStringLiteral("page"), static_cast<qint64>(pageIndex + 1)},
-          {QStringLiteral("blocks"), pageBlocks},
-          {QStringLiteral("characters"), pageCharacters},
-          {QStringLiteral("mean_confidence"),
-           pageBlocks > 0 ? pageConfidenceTotal / pageBlocks : 0.0},
-          {QStringLiteral("minimum_confidence"),
-           pageBlocks > 0 ? minimumConfidence : 0.0},
-          {QStringLiteral("low_confidence_blocks"), lowConfidenceBlocks},
-          {QStringLiteral("covered_area_fraction"),
-           imageArea > 0.0 ? coveredArea / imageArea : 0.0},
-          {QStringLiteral("text_sha256"),
-           QString::fromLatin1(pageTextHash.result().toHex())}
-      });
-    }
-    if (ocrMetrics.blocks > 0) {
-      ocrMetrics.meanConfidence = confidenceTotal / static_cast<double>(ocrMetrics.blocks);
-    }
-    ocrMetrics.textSha256 = QString::fromLatin1(textHash.result().toHex());
-
-    const QString textPath = qEnvironmentVariable("SCANTAILOR_BENCHMARK_OCR_TEXT_PATH");
-    if (!textPath.isEmpty()) {
-      QSaveFile textFile(textPath);
-      if (!textFile.open(QIODevice::WriteOnly)
-          || textFile.write(recognizedText) != recognizedText.size()
-          || !textFile.commit()) {
-        qWarning() << "Failed to write benchmark OCR text:" << textPath << textFile.errorString();
-      }
-    }
+  benchmark::BenchmarkOcrMetrics ocrMetrics;
+  if (benchmark::benchmarkAutoEnabled() && m_autoModeIncludeOcr) {
+    ocrMetrics = benchmark::collectBenchmarkOcrMetrics(*m_stages, *m_pages);
   }
-  if (benchmarkAutoEnabled()) {
-    writeBenchmarkResult(
+  if (benchmark::benchmarkAutoEnabled()) {
+    benchmark::writeBenchmarkResult(
         completed, elapsedMilliseconds, pageCount, m_autoStageElapsedMs, imageLoadStats, ocrMetrics);
   }
 
-  const bool showSummary = completed && !benchmarkAutoEnabled();
+  const bool showSummary = completed && !benchmark::benchmarkAutoEnabled();
   m_autoModeTimer.invalidate();
   m_autoStageTimer.invalidate();
   m_autoModeStage = AUTO_NONE;
@@ -2217,7 +1984,7 @@ void MainWindow::finishAutoProcess(const bool completed) {
   }
   m_autoTimingSummary.clear();
   m_autoTimingBreakdown.clear();
-  if (benchmarkAutoEnabled()) {
+  if (benchmark::benchmarkAutoEnabled()) {
     // Qt's normal quit path can leave a GUI process resident under
     // LaunchServices even after the event loop is asked to stop. All worker
     // tasks are complete and the atomic result file is committed at this
@@ -2276,86 +2043,6 @@ void MainWindow::resetAutoProcessColorPolicy() {
   if (m_stages) {
     m_stages->finalizeFilter()->settings()->setAutoColorModePolicy(
         finalize::AutoColorModePolicy::BestGuess);
-  }
-}
-
-void MainWindow::autoAcceptPageSplit() {
-  auto settings = m_stages->pageSplitFilter()->settings();
-  if (!settings) return;
-
-  const PageSequence pages = m_pages->toPageSequence(IMAGE_VIEW);
-  std::set<ImageId> seen;
-  int splitCount = 0, singleCount = 0;
-  std::vector<ImageId> splitIds, singleIds;
-
-  for (const PageInfo& pi : pages) {
-    const ImageId& id = pi.id().imageId();
-    if (seen.count(id)) continue;
-    seen.insert(id);
-
-    page_split::Settings::Record record = settings->getPageRecord(id);
-    const page_split::Params* params = record.params();
-    bool isSplit = params && params->pageLayout().type() == page_split::PageLayout::TWO_PAGES;
-
-    if (isSplit) { splitCount++; splitIds.push_back(id); }
-    else         { singleCount++; singleIds.push_back(id); }
-  }
-
-  // Force minority to match majority
-  if (splitCount > singleCount)
-    forceTwoPageForImages(singleIds);
-  else if (singleCount > splitCount)
-    forceSinglePageForImages(splitIds);
-}
-
-void MainWindow::autoSetDeskewZero() {
-  auto settings = m_stages->deskewFilter()->settings();
-  if (!settings) return;
-
-  const PageSequence pages = m_pages->toPageSequence(getCurrentView());
-  std::set<PageId> pageIds;
-  for (const PageInfo& pi : pages)
-    pageIds.insert(pi.id());
-
-  deskew::Params zeroParams(0.0, deskew::Dependencies(), MODE_MANUAL);
-  settings->setDegrees(pageIds, zeroParams);
-}
-
-void MainWindow::autoAcceptContentOutliers() {
-  auto settings = m_stages->selectContentFilter()->settings();
-  if (!settings) return;
-
-  const PageSequence pages = m_pages->toPageSequence(getCurrentView());
-  std::vector<PageId> outliers;
-
-  for (const PageInfo& pi : pages) {
-    std::unique_ptr<select_content::Params> params(settings->getPageParams(pi.id()));
-    if (!params) continue;
-    if (!params->contentRect().isValid() || !params->pageRect().isValid()) continue;
-    if (params->contentDetectionMode() == MODE_DISABLED) continue;
-
-    double pageArea = params->pageRect().width() * params->pageRect().height();
-    double contentArea = params->contentRect().width() * params->contentRect().height();
-    double ratio = (pageArea > 0) ? (contentArea / pageArea) : 1.0;
-
-    if (ratio < 0.5)
-      outliers.push_back(pi.id());
-  }
-
-  if (!outliers.empty())
-    preserveLayoutForPages(outliers);
-}
-
-void MainWindow::autoAcceptPageSizeOutliers() {
-  auto settings = m_stages->pageLayoutFilter()->settings();
-  if (!settings) return;
-
-  auto outliers = settings->getOutlierPages(1.3);
-  if (!outliers.empty()) {
-    std::vector<PageId> ids;
-    for (const auto& o : outliers)
-      ids.push_back(o.pageId);
-    disableAlignmentForPages(ids);
   }
 }
 
@@ -2753,289 +2440,19 @@ bool MainWindow::saveProjectAsTriggered() {
 }  // MainWindow::saveProjectAsTriggered
 
 void MainWindow::exportToPdf() {
-  if (!isProjectLoaded()) {
-    QMessageBox::warning(this, tr("Export to PDF"), tr("No project is loaded."));
-    return;
-  }
-
-  // Get all pages in order
-  const PageSequence pages = m_thumbSequence->toPageSequence();
-  if (pages.numPages() == 0) {
-    QMessageBox::warning(this, tr("Export to PDF"), tr("No pages in project."));
-    return;
-  }
-
-  // Collect output file paths
-  QStringList outputFiles;
-  for (const PageInfo& pageInfo : pages) {
-    const QString filePath = m_outFileNameGen.filePathFor(pageInfo.id());
-    if (QFile::exists(filePath)) {
-      outputFiles.append(filePath);
-    }
-  }
-
-  if (outputFiles.isEmpty()) {
-    QMessageBox::warning(this, tr("Export to PDF"),
-                         tr("No output files found. Please process the pages first."));
-    return;
-  }
-
-  // Create options dialog
-  QDialog optionsDialog(this);
-  optionsDialog.setWindowTitle(tr("Export to PDF"));
-  optionsDialog.setModal(true);
-
-  auto* layout = new QFormLayout(&optionsDialog);
-
-  auto* infoLabel = new QLabel(tr("%1 pages will be exported.").arg(outputFiles.size()));
-  layout->addRow(infoLabel);
-
-  auto* qualityCombo = new QComboBox();
-  qualityCombo->addItem(tr("High Quality (larger files)"), static_cast<int>(PdfExporter::Quality::High));
-  qualityCombo->addItem(tr("Medium Quality (balanced)"), static_cast<int>(PdfExporter::Quality::Medium));
-  qualityCombo->addItem(tr("Lower Quality (smaller files)"), static_cast<int>(PdfExporter::Quality::Low));
-  qualityCombo->setCurrentIndex(1);  // Default to Medium
-  layout->addRow(tr("Quality:"), qualityCombo);
-
-  auto* qualityNote = new QLabel(tr("Quality affects color pages and grayscale (when compressed)."));
-  qualityNote->setStyleSheet("color: gray; font-size: 11px;");
-  layout->addRow(qualityNote);
-
-  auto* compressGrayCheck = new QCheckBox(tr("Compress grayscale pages (smaller, slight quality loss)"));
-  compressGrayCheck->setChecked(false);
-  layout->addRow(compressGrayCheck);
-
-  // Max DPI dropdown for downsampling high-res images
-  auto* maxDpiCombo = new QComboBox;
-  maxDpiCombo->addItem(tr("Original (no limit)"), 0);
-  maxDpiCombo->addItem(tr("600 DPI"), 600);
-  maxDpiCombo->addItem(tr("300 DPI (recommended)"), 300);
-  maxDpiCombo->addItem(tr("150 DPI (small file)"), 150);
-  maxDpiCombo->setCurrentIndex(2);  // Default to 300 DPI
-  layout->addRow(tr("Max resolution:"), maxDpiCombo);
-
-  auto* dpiNote = new QLabel(tr("Lower resolution = smaller file. 300 DPI is good for most uses."));
-  dpiNote->setStyleSheet("color: gray; font-size: 11px;");
-  layout->addRow(dpiNote);
-
-  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-  connect(buttons, &QDialogButtonBox::accepted, &optionsDialog, &QDialog::accept);
-  connect(buttons, &QDialogButtonBox::rejected, &optionsDialog, &QDialog::reject);
-  layout->addRow(buttons);
-
-  if (optionsDialog.exec() != QDialog::Accepted) {
-    return;
-  }
-
-  const auto quality = static_cast<PdfExporter::Quality>(qualityCombo->currentData().toInt());
-  const bool compressGrayscale = compressGrayCheck->isChecked();
-  const int maxDpi = maxDpiCombo->currentData().toInt();
-
-  // Ask user where to save
-  const BookMetadata legacyMeta = m_stages->exportFilter()->settings()->bookMetadata();
-  QString pdfPath = QFileDialog::getSaveFileName(
-      this, tr("Export to PDF"), defaultPdfExportPath(legacyMeta), tr("PDF Files (*.pdf)"));
-
-  if (pdfPath.isEmpty()) {
-    return;
-  }
-
-  if (!pdfPath.endsWith(".pdf", Qt::CaseInsensitive)) {
-    pdfPath += ".pdf";
-  }
-
-  // Export (no OCR data for this legacy export dialog)
-  const PdfExportRunResult exportResult = runPdfExportInBackground(
-      this, outputFiles.size(), [=](const PdfExporter::ProgressCallback& progressCallback) {
-        return PdfExporter::exportToPdf(outputFiles, pdfPath, legacyMeta.title, legacyMeta.authors, quality,
-                                        compressGrayscale, maxDpi, {}, progressCallback);
-      });
-
-  if (exportResult.cancelled) {
-    QMessageBox::information(this, tr("Export to PDF"), tr("Export cancelled."));
-  } else if (exportResult.success) {
-    QFileInfo fileInfo(pdfPath);
-    const qint64 sizeBytes = fileInfo.size();
-    QString sizeStr;
-    if (sizeBytes >= 1024 * 1024) {
-      sizeStr = QString::number(sizeBytes / (1024.0 * 1024.0), 'f', 1) + " MB";
-    } else {
-      sizeStr = QString::number(sizeBytes / 1024.0, 'f', 1) + " KB";
-    }
-    showExportSuccessDialog(this, pdfPath, outputFiles.size(), sizeStr);
-  } else {
-    QMessageBox::critical(this, tr("Export to PDF"), tr("Failed to export to PDF."));
-  }
+  m_pdfExportFlow->exportToPdf();
 }
 
 void MainWindow::exportToPdfFromFilter() {
-  if (!isProjectLoaded()) {
-    QMessageBox::warning(this, tr("Export to PDF"), tr("No project is loaded."));
-    return;
-  }
+  m_pdfExportFlow->exportToPdfFromFilter();
+}
 
-  // Get all pages in order
-  const PageSequence pages = m_thumbSequence->toPageSequence();
-  if (pages.numPages() == 0) {
-    QMessageBox::warning(this, tr("Export to PDF"), tr("No pages in project."));
-    return;
-  }
+PageSequence MainWindow::exportPageSequence() const {
+  return m_thumbSequence->toPageSequence();
+}
 
-  // Get settings from export filter
-  const auto& exportSettings = m_stages->exportFilter()->settings();
-  const bool noDpiLimit = exportSettings->noDpiLimit();
-  const int maxDpi = noDpiLimit ? 0 : exportSettings->maxDpi();  // 0 means no limit
-  const bool compressGrayscale = exportSettings->compressGrayscale();
-  const PdfExporter::Quality quality = exportSettings->quality();
-
-  // Collect output file paths and check for unprocessed pages
-  QStringList outputFiles;
-  QStringList missingPages;
-  for (const PageInfo& pageInfo : pages) {
-    const QString filePath = m_outFileNameGen.filePathFor(pageInfo.id());
-    if (QFile::exists(filePath)) {
-      outputFiles.append(filePath);
-    } else {
-      missingPages.append(pageInfo.id().imageId().filePath());
-    }
-  }
-
-  // If there are missing pages, offer to process them first
-  if (!missingPages.isEmpty()) {
-    const int missingCount = missingPages.size();
-    const int reply = QMessageBox::question(
-        this, tr("Export to PDF"),
-        tr("%1 of %2 pages have not been processed yet.\n\n"
-           "Would you like to process them now before exporting?")
-            .arg(missingCount)
-            .arg(pages.numPages()),
-        QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
-
-    if (reply == QMessageBox::Cancel) {
-      return;
-    }
-
-    if (reply == QMessageBox::Yes) {
-      // Switch to Output filter and start batch processing
-      // Export filter has no batch processing, so we need to be in Output
-      filterList->selectRow(m_stages->outputFilterIdx());
-      startBatchProcessing();
-      return;
-    }
-
-    // No - export only the processed pages
-    if (outputFiles.isEmpty()) {
-      QMessageBox::warning(this, tr("Export to PDF"),
-                           tr("No output files found. Please process the pages first."));
-      return;
-    }
-  }
-
-  const BookMetadata meta = exportSettings->bookMetadata();
-  QString pdfPath = QFileDialog::getSaveFileName(
-      this, tr("Export to PDF"), defaultPdfExportPath(meta), tr("PDF Files (*.pdf)"));
-  if (pdfPath.isEmpty()) {
-    return;
-  }
-
-  if (!pdfPath.endsWith(".pdf", Qt::CaseInsensitive)) {
-    pdfPath += ".pdf";
-  }
-
-  // Collect OCR data if OCR is enabled
-  QMap<QString, PdfExporter::OcrTextData> ocrData;
-  const auto& ocrSettings = m_stages->ocrFilter()->settings();
-  if (ocrSettings->ocrEnabled()) {
-    for (const PageInfo& pageInfo : pages) {
-      const QString filePath = m_outFileNameGen.filePathFor(pageInfo.id());
-      if (!QFile::exists(filePath)) {
-        continue;  // Skip unprocessed pages
-      }
-
-      const std::unique_ptr<ocr::OcrResult> result = ocrSettings->getOcrResult(pageInfo.id());
-      if (result && !result->isEmpty()) {
-        PdfExporter::OcrTextData textData;
-        textData.imageWidth = result->imageWidth();
-        textData.imageHeight = result->imageHeight();
-
-        for (const ocr::OcrWord& word : result->words()) {
-          PdfExporter::OcrTextData::Word pdfWord;
-          pdfWord.text = word.text;
-          pdfWord.bounds = word.boundingBox;
-          textData.words.append(pdfWord);
-        }
-
-        ocrData.insert(filePath, textData);
-      }
-    }
-    qDebug() << "MainWindow: Collected OCR data for" << ocrData.size() << "pages";
-  }
-
-  // Export
-  const PdfExportRunResult exportResult = runPdfExportInBackground(
-      this, outputFiles.size(), [=](const PdfExporter::ProgressCallback& progressCallback) {
-        return PdfExporter::exportToPdf(outputFiles, pdfPath, meta.title, meta.authors, quality,
-                                        compressGrayscale, maxDpi, ocrData, progressCallback);
-      });
-
-  if (exportResult.cancelled) {
-    QMessageBox::information(this, tr("Export to PDF"), tr("Export cancelled."));
-  } else if (exportResult.success) {
-    QFileInfo fileInfo(pdfPath);
-    const qint64 sizeBytes = fileInfo.size();
-    QString sizeStr;
-    if (sizeBytes >= 1024 * 1024) {
-      sizeStr = QString::number(sizeBytes / (1024.0 * 1024.0), 'f', 1) + " MB";
-    } else {
-      sizeStr = QString::number(sizeBytes / 1024.0, 'f', 1) + " KB";
-    }
-    QString message =
-        tr("Successfully exported %1 pages to PDF.\nFile size: %2").arg(outputFiles.size()).arg(sizeStr);
-
-    export_::OptionsWidget* exportOptions = m_stages->exportFilter()->optionsWidget();
-    if (exportOptions->returnToZoteroEnabled()) {
-      const ZoteroLoopSidecar sidecar = *exportOptions->zoteroLoopSidecar();
-      exportOptions->setZoteroReturnStatus(tr("Zotero: returning exported PDF…"));
-      QPointer<export_::OptionsWidget> optionsGuard(exportOptions);
-      auto* zotero = new ZoteroClient(this);
-      zotero->returnAttachmentAsync(
-          sidecar.returnUrl, sidecar.token, sidecar.itemKey, pdfPath,
-          [this, zotero, optionsGuard, pdfPath, message](ZoteroClient::Result result) mutable {
-            if (result.ok()) {
-              message += tr("\n\nReturned to Zotero as attachment %1.").arg(result.attachmentKey);
-              if (optionsGuard) {
-                optionsGuard->setZoteroReturnStatus(
-                    tr("Zotero: returned as attachment %1").arg(result.attachmentKey));
-              }
-            } else {
-              message += tr("\n\nZotero: %1").arg(result.message);
-              if (optionsGuard) {
-                optionsGuard->setZoteroReturnStatus(tr("Zotero: %1").arg(result.message));
-              }
-            }
-            showExportSuccessDialog(this, pdfPath, message);
-            zotero->deleteLater();
-          });
-      return;
-    }
-
-    // Non-loop projects retain the existing generic Zotero item creation path.
-    // Export success is never gated on Zotero; failures are soft and informational.
-    if (!exportOptions->isZoteroLoopProject() && exportSettings->sendToZotero()) {
-      ZoteroClient zotero;
-      const ZoteroClient::Result result =
-          zotero.sendBookWithAttachment(meta, static_cast<int>(outputFiles.size()), pdfPath);
-      if (result.ok()) {
-        message += tr("\n\nSent to Zotero.");
-      } else {
-        message += tr("\n\nZotero: %1 (the PDF was exported normally).").arg(result.message);
-      }
-    }
-
-    showExportSuccessDialog(this, pdfPath, message);
-  } else {
-    QMessageBox::critical(this, tr("Export to PDF"), tr("Failed to export to PDF."));
-  }
+const OutputFileNameGenerator& MainWindow::outFileNameGen() const {
+  return m_outFileNameGen;
 }
 
 void MainWindow::newProject() {
@@ -3218,7 +2635,7 @@ bool MainWindow::importPdfFileToProject(const QString& pdfPath, const QString& p
 }
 
 void MainWindow::startBenchmarkAutoProcess() {
-  if (!benchmarkAutoEnabled()) {
+  if (!benchmark::benchmarkAutoEnabled()) {
     return;
   }
   startAutoMode();
@@ -3632,86 +3049,10 @@ bool MainWindow::closeProjectInteractive() {
 
 void MainWindow::closeProjectWithoutSaving() {
   // Clean up temp output files if not preserving them
-  cleanupTempOutputFiles();
+  temp_cleanup::cleanupTempOutputFiles(m_stages.get(), m_defaultOutDir, this);
 
   auto pages = std::make_shared<ProjectPages>();
   switchToNewProject(pages, QString());
-}
-
-void MainWindow::cleanupTempOutputFiles() {
-  qDebug() << "cleanupTempOutputFiles: entering";
-  if (!m_stages || !m_stages->finalizeFilter()) {
-    qDebug() << "cleanupTempOutputFiles: no stages or finalize filter, returning early";
-    return;
-  }
-
-  const auto& finalizeSettings = m_stages->finalizeFilter()->settings();
-  if (!finalizeSettings) {
-    qDebug() << "cleanupTempOutputFiles: no finalize settings, returning early";
-    return;
-  }
-
-  // If user chose to preserve output, don't clean up
-  if (finalizeSettings->preserveOutput()) {
-    return;
-  }
-
-  // m_defaultOutDir is the directory actually assigned when the project was
-  // created. Re-hashing m_projectFile here points at a different directory
-  // after Save Project As and leaves the real temporary files behind.
-  const QString tempDir = m_defaultOutDir;
-  if (!isSpectreTempOutputDir(tempDir)) {
-    return;
-  }
-  QDir dir(tempDir);
-
-  // Check if temp directory exists and has files
-  if (!dir.exists()) {
-    return;
-  }
-
-  const QFileInfoList files = dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
-  if (files.isEmpty()) {
-    // Empty temp dir - just remove it
-    dir.removeRecursively();
-    return;
-  }
-
-  // Show warning if enabled
-  if (!showTempCleanupWarning()) {
-    return;  // User cancelled
-  }
-
-  // Clean up the temp directory
-  dir.removeRecursively();
-  qDebug() << "Cleaned up temp output directory:" << tempDir;
-}
-
-bool MainWindow::showTempCleanupWarning() {
-  // Check if warning is disabled
-  if (!ApplicationSettings::getInstance().isTempCleanupWarningEnabled()) {
-    return true;  // Proceed without warning
-  }
-
-  QMessageBox msgBox(this);
-  msgBox.setIcon(QMessageBox::Warning);
-  msgBox.setWindowTitle(tr("Output Images"));
-  msgBox.setText(tr("Temporary output images will be deleted."));
-  msgBox.setInformativeText(tr("You will need to rebuild the output stage to regenerate them."));
-
-  QCheckBox* dontShowAgain = new QCheckBox(tr("Don't show this message again"), &msgBox);
-  msgBox.setCheckBox(dontShowAgain);
-
-  msgBox.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
-  msgBox.setDefaultButton(QMessageBox::Ok);
-
-  const int result = msgBox.exec();
-
-  if (dontShowAgain->isChecked()) {
-    ApplicationSettings::getInstance().setTempCleanupWarningEnabled(false);
-  }
-
-  return (result == QMessageBox::Ok);
 }
 
 bool MainWindow::saveProjectWithFeedback(const QString& projectFile) {
@@ -3803,7 +3144,7 @@ bool MainWindow::saveProjectToFolder(const QString& folderPath) {
     return false;
   }
 
-  if (isSpectreTempOutputDir(previousOutputDir)
+  if (temp_cleanup::isSpectreTempOutputDir(previousOutputDir)
       && QDir::cleanPath(previousOutputDir) != QDir::cleanPath(projectFolder.outputDir())) {
     QDir(previousOutputDir).removeRecursively();
   }
@@ -3903,7 +3244,7 @@ void MainWindow::showInsertFileDialog(BeforeOrAfter beforeOrAfter, const ImageId
       = std::make_unique<QFileDialog>(this, tr("Files to insert"), QFileInfo(existing.filePath()).absolutePath());
   dialog->setFileMode(QFileDialog::ExistingFiles);
   dialog->setProxyModel(new ProxyModel(*m_pages));
-  dialog->setNameFilter(tr("Images not in project (%1)").arg("*.png *.tiff *.tif *.jpeg *.jpg"));
+  dialog->setNameFilter(tr("Images not in project (%1)").arg("*.png *.tiff *.tif *.jpeg *.jpg *.jp2 *.heic *.heif *.webp *.bmp *.gif *.pbm *.pgm *.ppm"));
   // XXX: Adding individual pages from a multi-page TIFF where
   // some of the pages are already in project is not supported right now.
   if (dialog->exec() != QDialog::Accepted) {
@@ -4050,7 +3391,18 @@ void MainWindow::setColorModeForSelectedPages(output::ColorMode mode) {
     for (const PageId& pageId : pages) {
       m_thumbSequence->invalidateThumbnail(pageId);
     }
-    reloadRequested();
+
+    // reloadRequested() only re-dispatches the current page. When several
+    // pages were converted, re-render all of them now through the same
+    // selected-pages batch path the Output options panel uses
+    // (batchProcessingRequested -> batchProcessPages). That path refuses to
+    // start while another batch is running, so fall back to the current-page
+    // reload in that case rather than queuing a second batch.
+    if (pages.size() > 1 && !isBatchProcessingInProgress()) {
+      batchProcessPages(pages);
+    } else {
+      reloadRequested();
+    }
   }
 }
 
@@ -4540,594 +3892,62 @@ void MainWindow::reloadCurrentPage() {
 }
 
 void MainWindow::showBatchProcessingSummary() {
-  if (!m_stages || !m_pages) {
-    return;
-  }
-
-  // Get the page_split settings
-  auto pageSplitSettings = m_stages->pageSplitFilter()->settings();
-  if (!pageSplitSettings) {
-    return;
-  }
-
-  // Get all images and count split vs single pages
-  const PageSequence pages = m_pages->toPageSequence(IMAGE_VIEW);
-  int totalImages = 0;
-  int splitPages = 0;
-  int singlePages = 0;
-  std::vector<BatchProcessingSummaryDialog::PageSummary> singlePageList;
-  std::vector<BatchProcessingSummaryDialog::PageSummary> splitPageList;
-
-  // Track which ImageIds we've seen to avoid counting the same image twice
-  std::set<ImageId> seenImages;
-
-  for (const PageInfo& pageInfo : pages) {
-    const ImageId& imageId = pageInfo.id().imageId();
-
-    // Skip if we've already processed this image
-    if (seenImages.find(imageId) != seenImages.end()) {
-      continue;
-    }
-    seenImages.insert(imageId);
-    totalImages++;
-
-    // Get the page split record for this image
-    page_split::Settings::Record record = pageSplitSettings->getPageRecord(imageId);
-    const page_split::Params* params = record.params();
-
-    bool isSplit = false;
-    if (params) {
-      // Check the actual PageLayout type
-      const page_split::PageLayout& layout = params->pageLayout();
-      isSplit = (layout.type() == page_split::PageLayout::TWO_PAGES);
-    }
-
-    BatchProcessingSummaryDialog::PageSummary summary;
-    summary.imageId = imageId;
-    summary.fileName = QFileInfo(imageId.filePath()).fileName();
-    summary.pageNumber = totalImages;
-    summary.isSplit = isSplit;
-
-    if (isSplit) {
-      splitPages++;
-      splitPageList.push_back(summary);
-    } else {
-      singlePages++;
-      singlePageList.push_back(summary);
-    }
-  }
-
-  // Create and show the dialog
-  auto* dialog = new BatchProcessingSummaryDialog(this);
-  dialog->setSummary(totalImages, splitPages, singlePages, singlePageList, splitPageList);
-  dialog->setTimingDetails(m_autoTimingSummary, m_autoTimingBreakdown);
-
-  connect(dialog, &BatchProcessingSummaryDialog::jumpToPage,
-          this, &MainWindow::jumpToPageFromSummary);
-  connect(dialog, &BatchProcessingSummaryDialog::forceTwoPageSelected,
-          this, &MainWindow::forceTwoPageForImages);
-  connect(dialog, &BatchProcessingSummaryDialog::forceTwoPageAll,
-          this, &MainWindow::forceTwoPageForImages);
-  connect(dialog, &BatchProcessingSummaryDialog::forceSinglePageSelected,
-          this, &MainWindow::forceSinglePageForImages);
-  connect(dialog, &BatchProcessingSummaryDialog::forceSinglePageAll,
-          this, &MainWindow::forceSinglePageForImages);
-
-  dialog->setAttribute(Qt::WA_DeleteOnClose);
-  dialog->show();
-  dialog->raise();
-  dialog->activateWindow();
-}
-
-void MainWindow::jumpToPageFromSummary(const ImageId& imageId) {
-  if (!m_thumbSequence) {
-    return;
-  }
-
-  // Find the PageId for this image and jump to it
-  const PageSequence pages = m_pages->toPageSequence(getCurrentView());
-  for (const PageInfo& pageInfo : pages) {
-    if (pageInfo.id().imageId() == imageId) {
-      goToPage(pageInfo.id());
-      return;
-    }
-  }
+  m_batchSummaries->showBatchProcessingSummary(m_autoTimingSummary, m_autoTimingBreakdown);
 }
 
 void MainWindow::forceTwoPageForImages(const std::vector<ImageId>& imageIds) {
-  if (imageIds.empty() || !m_stages) {
-    return;
-  }
-
-  // Build a set of PageIds from the image IDs
-  std::set<PageId> pageIds;
-  const PageSequence pages = m_pages->toPageSequence(IMAGE_VIEW);
-  for (const PageInfo& pageInfo : pages) {
-    for (const ImageId& imageId : imageIds) {
-      if (pageInfo.id().imageId() == imageId) {
-        pageIds.insert(pageInfo.id());
-      }
-    }
-  }
-
-  if (pageIds.empty()) {
-    return;
-  }
-
-  // Set layout type to TWO_PAGES for all the selected pages
-  m_stages->pageSplitFilter()->settings()->setLayoutTypeFor(
-      page_split::TWO_PAGES, pageIds);
-
-  // Invalidate thumbnails for these pages to trigger re-processing
-  for (const PageId& pageId : pageIds) {
-    m_thumbSequence->invalidateThumbnail(pageId);
-  }
-
-  // Refresh the current view if we're on Page Split filter
-  if (m_curFilter == m_stages->pageSplitFilterIdx()) {
-    updateMainArea();
-  }
+  m_batchSummaries->forceTwoPageForImages(imageIds);
 }
 
 void MainWindow::forceSinglePageForImages(const std::vector<ImageId>& imageIds) {
-  if (imageIds.empty() || !m_stages) {
-    return;
-  }
-
-  // Build a set of PageIds from the image IDs
-  std::set<PageId> pageIds;
-  const PageSequence pages = m_pages->toPageSequence(IMAGE_VIEW);
-  for (const PageInfo& pageInfo : pages) {
-    for (const ImageId& imageId : imageIds) {
-      if (pageInfo.id().imageId() == imageId) {
-        pageIds.insert(pageInfo.id());
-      }
-    }
-  }
-
-  if (pageIds.empty()) {
-    return;
-  }
-
-  // Set layout type to SINGLE_PAGE_UNCUT for all the selected pages
-  m_stages->pageSplitFilter()->settings()->setLayoutTypeFor(
-      page_split::SINGLE_PAGE_UNCUT, pageIds);
-
-  // Invalidate thumbnails for these pages to trigger re-processing
-  for (const PageId& pageId : pageIds) {
-    m_thumbSequence->invalidateThumbnail(pageId);
-  }
-
-  // Refresh the current view if we're on Page Split filter
-  if (m_curFilter == m_stages->pageSplitFilterIdx()) {
-    updateMainArea();
-  }
+  m_batchSummaries->forceSinglePageForImages(imageIds);
 }
 
 void MainWindow::showPageBoxSummary() {
-  if (!m_stages || !m_pages) {
-    return;
-  }
-
-  auto pageBoxSettings = m_stages->pageBoxFilter()->settings();
-  if (!pageBoxSettings) {
-    return;
-  }
-
-  const PageSequence pages = m_pages->toPageSequence(getCurrentView());
-  std::vector<PageBoxSummaryDialog::PageSummary> allPages;
-  int pageNumber = 0;
-
-  for (const PageInfo& pageInfo : pages) {
-    const PageId& pageId = pageInfo.id();
-    pageNumber++;
-
-    auto params = pageBoxSettings->getPageParams(pageId);
-    if (!params) {
-      continue;
-    }
-
-    const QRectF& pageRect = params->pageRect();
-    if (!pageRect.isValid()) {
-      continue;
-    }
-
-    PageBoxSummaryDialog::PageSummary summary;
-    summary.pageId = pageId;
-    summary.fileName = QFileInfo(pageId.imageId().filePath()).fileName();
-    summary.pageNumber = pageNumber;
-    summary.pageWidth = pageRect.width();
-    summary.deviationPercent = 0;  // computed by dialog from median
-    allPages.push_back(summary);
-  }
-
-  if (allPages.empty()) {
-    return;
-  }
-
-  auto* dialog = new PageBoxSummaryDialog(this);
-  dialog->setSummary(static_cast<int>(allPages.size()), allPages, 10);
-
-  connect(dialog, &PageBoxSummaryDialog::jumpToPage,
-          this, [this](const PageId& pageId) { goToPage(pageId); });
-  connect(dialog, &PageBoxSummaryDialog::disablePageBoxSelected,
-          this, [this](const std::vector<PageId>& pageIds) {
-            auto settings = m_stages->pageBoxFilter()->settings();
-            for (const PageId& pid : pageIds) {
-              auto params = settings->getPageParams(pid);
-              if (params) {
-                params->setPageDetectionMode(MODE_DISABLED);
-                settings->setPageParams(pid, *params);
-              }
-            }
-            invalidateAllThumbnails();
-          });
-  connect(dialog, &PageBoxSummaryDialog::disablePageBoxAll,
-          this, [this](const std::vector<PageId>& pageIds) {
-            auto settings = m_stages->pageBoxFilter()->settings();
-            for (const PageId& pid : pageIds) {
-              auto params = settings->getPageParams(pid);
-              if (params) {
-                params->setPageDetectionMode(MODE_DISABLED);
-                settings->setPageParams(pid, *params);
-              }
-            }
-            invalidateAllThumbnails();
-          });
-
-  dialog->setAttribute(Qt::WA_DeleteOnClose);
-  dialog->show();
-  dialog->raise();
-  dialog->activateWindow();
+  m_batchSummaries->showPageBoxSummary();
 }
 
 void MainWindow::showContentCoverageSummary() {
-  if (!m_stages || !m_pages) {
-    return;
-  }
-
-  // Get the select_content settings
-  auto selectContentSettings = m_stages->selectContentFilter()->settings();
-  if (!selectContentSettings) {
-    return;
-  }
-
-  // Get all pages and calculate coverage ratios
-  const PageSequence pages = m_pages->toPageSequence(getCurrentView());
-  std::vector<ContentCoverageSummaryDialog::PageSummary> allPages;
-  int pageNumber = 0;
-
-  for (const PageInfo& pageInfo : pages) {
-    const PageId& pageId = pageInfo.id();
-    pageNumber++;
-
-    std::unique_ptr<select_content::Params> params(selectContentSettings->getPageParams(pageId));
-    if (!params) {
-      continue;
-    }
-
-    const QRectF& contentRect = params->contentRect();
-    const QRectF& pageRect = params->pageRect();
-
-    // Skip pages with invalid rects
-    if (!contentRect.isValid() || !pageRect.isValid()) {
-      continue;
-    }
-
-    // Skip pages where content detection is disabled (already preserved layout)
-    if (params->contentDetectionMode() == MODE_DISABLED) {
-      continue;
-    }
-
-    double pageArea = pageRect.width() * pageRect.height();
-    double contentArea = contentRect.width() * contentRect.height();
-    double coverageRatio = (pageArea > 0) ? (contentArea / pageArea) : 1.0;
-
-    ContentCoverageSummaryDialog::PageSummary summary;
-    summary.pageId = pageId;
-    summary.fileName = QFileInfo(pageId.imageId().filePath()).fileName();
-    summary.pageNumber = pageNumber;
-    summary.coverageRatio = coverageRatio;
-    allPages.push_back(summary);
-  }
-
-  // Only show dialog if there are pages to display
-  if (allPages.empty()) {
-    return;
-  }
-
-  // Create and show the dialog
-  auto* dialog = new ContentCoverageSummaryDialog(this);
-  dialog->setSummary(static_cast<int>(allPages.size()), allPages, 0.5);
-
-  connect(dialog, &ContentCoverageSummaryDialog::jumpToPage,
-          this, &MainWindow::jumpToPageFromContentSummary);
-  connect(dialog, &ContentCoverageSummaryDialog::preserveLayoutSelected,
-          this, &MainWindow::preserveLayoutForPages);
-  connect(dialog, &ContentCoverageSummaryDialog::preserveLayoutAll,
-          this, &MainWindow::preserveLayoutForPages);
-
-  dialog->setAttribute(Qt::WA_DeleteOnClose);
-  dialog->show();
-  dialog->raise();
-  dialog->activateWindow();
-}
-
-void MainWindow::jumpToPageFromContentSummary(const PageId& pageId) {
-  if (!m_thumbSequence) {
-    return;
-  }
-
-  goToPage(pageId);
+  m_batchSummaries->showContentCoverageSummary();
 }
 
 void MainWindow::preserveLayoutForPages(const std::vector<PageId>& pageIds) {
-  if (pageIds.empty() || !m_stages) {
-    return;
-  }
-
-  auto selectContentSettings = m_stages->selectContentFilter()->settings();
-  if (!selectContentSettings) {
-    return;
-  }
-
-  // For each page, set content detection mode to DISABLED and set content rect to page rect
-  for (const PageId& pageId : pageIds) {
-    std::unique_ptr<select_content::Params> params(selectContentSettings->getPageParams(pageId));
-    if (!params) {
-      continue;
-    }
-
-    // Set content detection mode to DISABLED (preserves original page layout)
-    params->setContentDetectionMode(MODE_DISABLED);
-
-    // Set content rect to match page rect (full page)
-    params->setContentRect(params->pageRect());
-
-    // Save the updated params
-    selectContentSettings->setPageParams(pageId, *params);
-
-    // Invalidate thumbnail to show the change
-    if (m_thumbSequence) {
-      m_thumbSequence->invalidateThumbnail(pageId);
-    }
-  }
-
-  // Refresh the current view if we're on Select Content filter
-  if (m_curFilter == m_stages->selectContentFilterIdx()) {
-    updateMainArea();
-  }
+  m_batchSummaries->preserveLayoutForPages(pageIds);
 }
 
 void MainWindow::showPageSizeWarning() {
-  if (!m_stages || !m_pages) {
-    return;
-  }
-
-  // Get the page_layout settings
-  auto pageLayoutSettings = m_stages->pageLayoutFilter()->settings();
-  if (!pageLayoutSettings) {
-    return;
-  }
-
-  // Get the aggregate size first (needed for spread detection)
-  QSizeF aggSize = pageLayoutSettings->getAggregateHardSizeMM();
-
-  // Check if we have valid aggregate size - if not, data hasn't been populated yet
-  if (!aggSize.isValid() || aggSize.isEmpty()) {
-    return;
-  }
-
-  // Get outlier pages (default threshold 1.3 = 30% deviation)
-  auto outlierPages = pageLayoutSettings->getOutlierPages(1.3);
-
-  // Get median size - if no outliers, we still need to check for spreads
-  double medianWidthMM = 0;
-  double medianHeightMM = 0;
-
-  if (!outlierPages.empty()) {
-    medianWidthMM = outlierPages[0].medianWidthMM;
-    medianHeightMM = outlierPages[0].medianHeightMM;
-  } else {
-    // No outliers - try to get median some other way or use aggregate
-    // For now, estimate based on typical page ratio vs aggregate
-    // If aggregate width is ~2x a typical portrait page, it's likely spreads
-    double aspectRatio = aggSize.height() > 0 ? aggSize.width() / aggSize.height() : 1.0;
-    if (aspectRatio > 1.3) {  // Landscape/spread-like aspect ratio
-      medianWidthMM = aggSize.width() / 2.0;  // Estimate half width as typical
-      medianHeightMM = aggSize.height();
-    } else {
-      // Can't determine - don't show dialog
-      return;
-    }
-  }
-
-  // Check if this looks like a spread situation (aggregate ~2x median width)
-  double widthRatio = (medianWidthMM > 0) ? (aggSize.width() / medianWidthMM) : 1.0;
-  bool likelySpreads = (widthRatio > 1.8 && widthRatio < 2.2);
-
-  // Only show dialog if there are outlier pages OR it looks like spreads
-  if (outlierPages.empty() && !likelySpreads) {
-    return;
-  }
-
-  // Get all pages to count them and assign page numbers
-  const PageSequence pages = m_pages->toPageSequence(getCurrentView());
-
-  // Convert to dialog's OutlierInfo format
-  // Match by ImageId rather than full PageId to handle sub-page differences
-  std::vector<PageSizeWarningDialog::OutlierInfo> dialogOutliers;
-  for (const auto& outlier : outlierPages) {
-    // Find this outlier's page number in the sequence
-    int pageNumber = 0;
-    bool found = false;
-    for (const PageInfo& pageInfo : pages) {
-      pageNumber++;
-      // Match by ImageId to be more flexible with sub-page differences
-      if (pageInfo.id().imageId() == outlier.pageId.imageId()) {
-        found = true;
-        break;
-      }
-    }
-
-    if (found) {
-      PageSizeWarningDialog::OutlierInfo info;
-      info.pageId = outlier.pageId;
-      info.fileName = QFileInfo(outlier.pageId.imageId().filePath()).fileName();
-      info.pageNumber = pageNumber;
-      info.hardWidthMM = outlier.hardWidthMM;
-      info.hardHeightMM = outlier.hardHeightMM;
-      info.medianWidthMM = outlier.medianWidthMM;
-      info.medianHeightMM = outlier.medianHeightMM;
-      info.deviationRatio = outlier.deviationRatio;
-      info.isLarger = outlier.isLarger;
-      info.setsAggregateWidth = outlier.setsAggregateWidth;
-      info.setsAggregateHeight = outlier.setsAggregateHeight;
-      dialogOutliers.push_back(info);
-    }
-  }
-
-  // Create and show the dialog
-  auto* dialog = new PageSizeWarningDialog(this);
-
-  // When likelySpreads is true, ALWAYS use spread mode - it's more accurate than area-based outlier detection
-  if (likelySpreads) {
-    // Spread mode - get only unsplit spread pages (not all pages)
-    auto unsplitSpreads = pageLayoutSettings->getUnsplitSpreadPages();
-
-    if (unsplitSpreads.empty()) {
-      // No unsplit spreads found, don't show dialog
-      delete dialog;
-      return;
-    }
-
-    // Convert to dialog format and assign page numbers
-    // For spread pages, we need to:
-    // 1. Deduplicate by ImageId (since Settings may have LEFT_PAGE and RIGHT_PAGE entries for same image)
-    // 2. Use IMAGE_VIEW to get correct image numbers (not sub-page numbers)
-
-    // Get image-based page sequence for correct numbering
-    const PageSequence imagePages = m_pages->toPageSequence(IMAGE_VIEW);
-
-    // Track which ImageIds we've already added to avoid duplicates
-    std::set<ImageId> seenImageIds;
-    std::vector<PageSizeWarningDialog::OutlierInfo> spreadPages;
-
-    for (const auto& spread : unsplitSpreads) {
-      // Skip if we've already processed this image
-      if (seenImageIds.count(spread.pageId.imageId())) {
-        continue;
-      }
-      seenImageIds.insert(spread.pageId.imageId());
-
-      // Find this spread's image number in the sequence
-      int imageNum = 0;
-      bool found = false;
-      for (const PageInfo& pageInfo : imagePages) {
-        imageNum++;
-        if (pageInfo.id().imageId() == spread.pageId.imageId()) {
-          found = true;
-          break;
-        }
-      }
-
-      if (found) {
-        PageSizeWarningDialog::OutlierInfo info;
-        info.pageId = spread.pageId;
-        info.fileName = QFileInfo(spread.pageId.imageId().filePath()).fileName();
-        info.pageNumber = imageNum;  // Use image number, not sub-page number
-        info.hardWidthMM = spread.hardWidthMM;
-        info.hardHeightMM = spread.hardHeightMM;
-        info.medianWidthMM = spread.medianWidthMM;
-        info.medianHeightMM = spread.medianHeightMM;
-        info.deviationRatio = spread.deviationRatio;
-        info.isLarger = spread.isLarger;
-        info.setsAggregateWidth = spread.setsAggregateWidth;
-        info.setsAggregateHeight = spread.setsAggregateHeight;
-        spreadPages.push_back(info);
-      }
-    }
-
-    if (spreadPages.empty()) {
-      // No unsplit spreads matched to page sequence - don't show dialog
-      delete dialog;
-      return;
-    }
-
-    dialog->setSpreadPages(pages.numPages(),
-                            medianWidthMM, medianHeightMM,
-                            aggSize.width(), aggSize.height(),
-                            spreadPages);
-
-    connect(dialog, &PageSizeWarningDialog::goToPageSplitStage,
-            this, &MainWindow::goToPageSplitFromWarning);
-  } else {
-    // Outlier mode
-    dialog->setOutlierPages(pages.numPages(),
-                            medianWidthMM, medianHeightMM,
-                            aggSize.width(), aggSize.height(),
-                            dialogOutliers, 1.3);
-  }
-
-  connect(dialog, &PageSizeWarningDialog::jumpToPage,
-          this, &MainWindow::jumpToPageFromPageSizeWarning);
-  connect(dialog, &PageSizeWarningDialog::detachPagesFromSizing,
-          this, &MainWindow::disableAlignmentForPages);
-
-  dialog->setAttribute(Qt::WA_DeleteOnClose);
-  dialog->show();
-  dialog->raise();
-  dialog->activateWindow();
-}
-
-void MainWindow::jumpToPageFromPageSizeWarning(const PageId& pageId) {
-  if (!m_thumbSequence || !m_pages) {
-    return;
-  }
-
-  // Find the actual PageId in the current view that matches this ImageId
-  // (the stored PageId may have different sub-page info)
-  const PageSequence pages = m_pages->toPageSequence(getCurrentView());
-  for (const PageInfo& pageInfo : pages) {
-    if (pageInfo.id().imageId() == pageId.imageId()) {
-      goToPage(pageInfo.id());
-      return;
-    }
-  }
-
-  // Fallback to original pageId if no match found
-  goToPage(pageId);
-}
-
-void MainWindow::goToPageSplitFromWarning() {
-  if (!m_stages) {
-    return;
-  }
-
-  // Switch to the Page Split filter (stage 2)
-  filterList->selectRow(m_stages->pageSplitFilterIdx());
+  m_batchSummaries->showPageSizeWarning();
 }
 
 void MainWindow::disableAlignmentForPages(const std::vector<PageId>& pageIds) {
-  if (pageIds.empty() || !m_stages) {
-    return;
-  }
-
-  auto pageLayoutSettings = m_stages->pageLayoutFilter()->settings();
-  if (!pageLayoutSettings) {
-    return;
-  }
-
-  // Disable alignment for all specified pages
-  pageLayoutSettings->disableAlignmentForPages(pageIds);
-
-  // Invalidate all thumbnails since aggregate size might change
-  if (m_thumbSequence) {
-    m_thumbSequence->invalidateAllThumbnails();
-  }
-
-  // Refresh the current view if we're on Margins filter
-  if (m_curFilter == m_stages->pageLayoutFilterIdx()) {
-    updateMainArea();
-  }
+  m_batchSummaries->disableAlignmentForPages(pageIds);
 }
+
+StageSequence* MainWindow::stages() const {
+  return m_stages.get();
+}
+
+ProjectPages* MainWindow::pages() const {
+  return m_pages.get();
+}
+
+ThumbnailSequence* MainWindow::thumbSequence() const {
+  return m_thumbSequence.get();
+}
+
+PageView MainWindow::currentView() const {
+  return getCurrentView();
+}
+
+int MainWindow::currentFilterIndex() const {
+  return m_curFilter;
+}
+
+void MainWindow::jumpToPage(const PageId& pageId) {
+  goToPage(pageId);
+}
+
+void MainWindow::selectFilterListRow(int row) {
+  filterList->selectRow(row);
+}
+

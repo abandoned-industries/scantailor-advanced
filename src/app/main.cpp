@@ -14,7 +14,9 @@
 #include <QSGRendererInterface>
 #include <QSettings>
 #include <QStringList>
+#include <QTimer>
 
+#include "AccessibilitySafeguard.h"
 #include "AppController.h"
 #include "MainWindow.h"
 
@@ -31,6 +33,10 @@ int main(int argc, char* argv[]) {
 
   // Qt6 enables high DPI scaling by default
   Application app(argc, argv);
+
+  // Qt 6.11's macOS accessibility bridge crashes when an external AX client
+  // reads AXSelectedChildren from any item view. Must run before widgets exist.
+  installAccessibilitySafeguard();
 
 #ifdef Q_OS_MAC
   // Initialize Metal lifecycle observer to detect app backgrounding
@@ -70,11 +76,22 @@ int main(int argc, char* argv[]) {
   // macOS: Use AppController to manage StartupWindow and MainWindow
   AppController controller;
 
-  // Connect file open events (from Finder double-click, drag-drop, Open With)
-  QObject::connect(&app, &Application::fileOpenRequested, &controller, &AppController::openProject);
+  // Connect file open events (from Finder double-click, drag-drop, Open With).
+  // Queued: the event is delivered from inside AppKit's Apple Event handler, and
+  // the import flow is modal - running it there wedges the application (no window
+  // is ordered front and no input is processed until the handler returns).
+  QObject::connect(&app, &Application::fileOpenRequested, &controller, &AppController::openProject,
+                   Qt::QueuedConnection);
+
+  // Quit requests from the system (Dock menu, "quit" Apple Event, log out).
+  QObject::connect(&app, &Application::quitRequested, &controller, &AppController::quitApplication,
+                   Qt::QueuedConnection);
 
   if (args.size() > 1) {
-    controller.openProject(args.at(1));
+    // Deferred for the same reason: the import flow is modal and must not run
+    // before the event loop is up.
+    const QString startupPath = args.at(1);
+    QTimer::singleShot(0, &controller, [&controller, startupPath]() { controller.openProject(startupPath); });
   } else {
     controller.start();
   }

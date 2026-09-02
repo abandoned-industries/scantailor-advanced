@@ -136,7 +136,9 @@ class Settings {
   void setOutputFormat(OutputFormat format) { m_outputFormat = format; }
 
   TiffCompression tiffCompression() const { return m_tiffCompression; }
-  void setTiffCompression(TiffCompression compression) { m_tiffCompression = compression; }
+  // Also syncs the choice to the ApplicationSettings color-compression key
+  // that TiffWriter actually reads (QW4; audit F2).
+  void setTiffCompression(TiffCompression compression);
 
   int jpegQuality() const { return m_jpegQuality; }
   void setJpegQuality(int quality) { m_jpegQuality = quality; }

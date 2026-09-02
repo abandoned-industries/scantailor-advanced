@@ -7,11 +7,17 @@
 #include <QIODevice>
 #include <QString>
 
+#include "BmpMetadataLoader.h"
+#include "GifMetadataLoader.h"
+#include "HeicMetadataLoader.h"
 #include "ImageMetadata.h"
+#include "Jp2MetadataLoader.h"
 #include "JpegMetadataLoader.h"
 #include "PdfMetadataLoader.h"
 #include "PngMetadataLoader.h"
+#include "PnmMetadataLoader.h"
 #include "TiffMetadataLoader.h"
+#include "WebpMetadataLoader.h"
 
 ImageMetadataLoader::LoaderList ImageMetadataLoader::m_sLoaders;
 
@@ -24,6 +30,16 @@ ImageMetadataLoader::StaticInit::StaticInit() {
   registerLoader(std::make_shared<PngMetadataLoader>());
   registerLoader(std::make_shared<TiffMetadataLoader>());
   registerLoader(std::make_shared<PdfMetadataLoader>());
+  // JP2's signature box cannot collide with any of the magics above.
+  registerLoader(std::make_shared<Jp2MetadataLoader>());
+  // The magics below ('BM', 'GIF8', 'P1'-'P6', 'RIFF'+'WEBP', 'ftyp' with a
+  // HEIF brand) are mutually exclusive with everything above,
+  // and each loader leaves the device untouched on a mismatch.
+  registerLoader(std::make_shared<BmpMetadataLoader>());
+  registerLoader(std::make_shared<GifMetadataLoader>());
+  registerLoader(std::make_shared<PnmMetadataLoader>());
+  registerLoader(std::make_shared<WebpMetadataLoader>());
+  registerLoader(std::make_shared<HeicMetadataLoader>());
 }
 
 ImageMetadataLoader::StaticInit ImageMetadataLoader::m_staticInit;

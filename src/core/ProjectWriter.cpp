@@ -17,6 +17,7 @@
 #include "PageId.h"
 #include "PageInfo.h"
 #include "PageView.h"
+#include "PdfReader.h"
 #include "ProjectPages.h"
 #include "version.h"
 
@@ -159,6 +160,14 @@ QDomElement ProjectWriter::processFiles(QDomDocument& doc) const {
     fileEl.setAttribute("id", file.numericId);
     fileEl.setAttribute("dirId", dirId(dirPath));
     fileEl.setAttribute("name", fileInfo.fileName());
+    // Persist the chosen PDF render DPI (QW5; audit F1): without it, a
+    // reopened project renders at the 300-DPI default and LoadFileTask's
+    // size-mismatch heuristic rewrites the stored metadata. Only emitted for
+    // files with an explicit entry, so pre-QW5 projects keep their old
+    // (default-DPI) behavior.
+    if (PdfReader::hasImportDpi(file.path)) {
+      fileEl.setAttribute("pdfImportDpi", PdfReader::getImportDpi(file.path));
+    }
     filesEl.appendChild(fileEl);
   }
   return filesEl;

@@ -303,7 +303,7 @@ going to duplicate it here because it drifts. The short version:
 
 ```bash
 # Dependencies (once)
-brew install qt6 boost libtiff libpng jpeg cmake libharu leptonica
+brew install qt6 boost libtiff libpng jpeg cmake leptonica
 
 # Build
 mkdir -p build && cd build

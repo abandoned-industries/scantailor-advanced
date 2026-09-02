@@ -9,6 +9,7 @@
 
 #include "AbstractFilter.h"
 #include "FileNameDisambiguator.h"
+#include "PdfReader.h"
 #include "ProjectPages.h"
 #include "XmlUnmarshaller.h"
 #include "version.h"
@@ -152,6 +153,16 @@ void ProjectReader::processFiles(const QDomElement& filesEl) {
     const QString filePath(QDir(dirPath).filePath(name));
     const FileRecord rec(filePath, compatMultiPage);
     m_fileMap.insert(FileMap::value_type(id, rec));
+
+    // Restore the persisted PDF render DPI (QW5; audit F1) before any page
+    // render, so LoadFileTask sees images at the size the stored metadata
+    // expects. Projects saved before this attribute existed simply have no
+    // entry and keep the old behavior (PdfReader's 300-DPI default).
+    bool dpiOk = false;
+    const int pdfImportDpi = el.attribute("pdfImportDpi").toInt(&dpiOk);
+    if (dpiOk && pdfImportDpi > 0) {
+      PdfReader::setImportDpi(filePath, pdfImportDpi);
+    }
   }
 }  // ProjectReader::processFiles
 

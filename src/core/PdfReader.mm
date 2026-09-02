@@ -571,4 +571,9 @@ int PdfReader::getImportDpi(const QString& filePath) {
   return DEFAULT_RENDER_DPI;
 }
 
+bool PdfReader::hasImportDpi(const QString& filePath) {
+  QMutexLocker lock(&s_importDpiMutex);
+  return s_importDpiMap.find(filePath) != s_importDpiMap.end();
+}
+
 #endif  // Q_OS_MACOS

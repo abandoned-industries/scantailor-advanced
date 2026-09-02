@@ -112,6 +112,10 @@ class ApplicationSettings {
 
   void setCancelingSelectionQuestionEnabled(bool enabled);
 
+  int getBatchProcessingThreads(int defaultValue) const;
+
+  void setBatchProcessingThreads(int threads, int maxThreads);
+
   bool isTempCleanupWarningEnabled() const;
 
   void setTempCleanupWarningEnabled(bool enabled);
@@ -174,6 +178,7 @@ class ApplicationSettings {
   static const QString JPEG_OUTPUT_KEY;
   static const QString JPEG_QUALITY_KEY;
   static const QString TEMP_CLEANUP_WARNING_KEY;
+  static const QString BATCH_PROCESSING_THREADS_KEY;
   static const QString PDF_RECOMMENDED_NAME_KEY;
 
   QSettings m_settings;

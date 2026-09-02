@@ -60,9 +60,14 @@ set(common_sources
     PngMetadataLoader.cpp PngMetadataLoader.h
     TiffMetadataLoader.cpp TiffMetadataLoader.h
     JpegMetadataLoader.cpp JpegMetadataLoader.h
+    Jp2MetadataLoader.cpp Jp2MetadataLoader.h
+    BmpMetadataLoader.cpp BmpMetadataLoader.h
+    GifMetadataLoader.cpp GifMetadataLoader.h
+    PnmMetadataLoader.cpp PnmMetadataLoader.h
+    WebpMetadataLoader.cpp WebpMetadataLoader.h
+    HeicMetadataLoader.cpp HeicMetadataLoader.h
     PdfMetadataLoader.cpp PdfMetadataLoader.h
     ImageLoader.cpp ImageLoader.h
-    ImageTypeDetector.cpp ImageTypeDetector.h
     LeptonicaDetector.cpp LeptonicaDetector.h
     PhotoFrameDetector.cpp PhotoFrameDetector.h
     PlatePrior.cpp PlatePrior.h
@@ -200,7 +205,6 @@ target_link_libraries(
   core
   PRIVATE TIFF::TIFF PNG::PNG ZLIB::ZLIB JPEG::JPEG
     ${LEPTONICA_LIBRARIES}
-    $<$<BOOL:${LibHaru_FOUND}>:LibHaru::LibHaru>
     $<$<BOOL:${VISION_FRAMEWORK}>:${VISION_FRAMEWORK}>
     $<$<BOOL:${FOUNDATION_FRAMEWORK}>:${FOUNDATION_FRAMEWORK}>
     $<$<BOOL:${APPKIT_FRAMEWORK}>:${APPKIT_FRAMEWORK}>
